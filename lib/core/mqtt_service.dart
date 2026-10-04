@@ -9,6 +9,7 @@ import 'config.dart';
 
 class MqttService {
   MqttServerClient? _client;
+  StreamSubscription<List<MqttReceivedMessage<MqttMessage?>>>? _updatesSub;
   bool _isConnected = false;
   bool get isConnected => _isConnected;
 
@@ -16,7 +17,8 @@ class MqttService {
   Stream<Map<String, dynamic>> get messages => _messageController.stream;
 
   Future<bool> connect({String brokerUrl = AppConfig.brokerUrl}) async {
-    if (_isConnected && _client != null) return true;
+    // Luôn kết nối lại sạch để tránh kẹt state
+    await disconnect();
 
     final uri = Uri.parse(brokerUrl);
     final scheme = uri.scheme.isNotEmpty ? uri.scheme : 'wss';
@@ -32,10 +34,14 @@ class MqttService {
 
     _client = MqttServerClient.withPort('$scheme://$host$path', clientId, port);
     _client!.useWebSocket = true;
+    _client!.secure = isSecure;
     _client!.websocketProtocols = MqttClientConstants.protocolsSingleDefault;
-    _client!.logging(on: false);
-    _client!.keepAlivePeriod = 60;
+    _client!.logging(on: kDebugMode);
+    _client!.keepAlivePeriod = 30;
+    _client!.connectTimeoutPeriod = 10000;
     _client!.autoReconnect = true;
+    _client!.resubscribeOnAutoReconnect = true;
+
     _client!.onConnected = () {
       _isConnected = true;
       _subscribeAll();
@@ -56,14 +62,16 @@ class MqttService {
         .startClean()
         .withWillTopic('tele/ngungtu_app/status')
         .withWillMessage('offline')
-        .withWillRetain()
         .withWillQos(MqttQos.atLeastOnce);
 
     try {
-      await _client!.connect().timeout(const Duration(seconds: 12));
+      await _client!.connect().timeout(const Duration(seconds: 15));
     } catch (e) {
       if (kDebugMode) print('MQTT connect error: $e');
       _isConnected = false;
+      try {
+        _client?.disconnect();
+      } catch (_) {}
       return false;
     }
 
@@ -80,9 +88,17 @@ class MqttService {
 
   void _subscribeAll() {
     if (_client == null || !_isConnected) return;
-    for (final topic in AppConfig.subscribeTopics) {
+
+    // Wildcard bắt mọi tele/.../status (khớp ESP publish tele/{device}/status)
+    final topics = <String>{
+      'tele/+/status',
+      ...AppConfig.subscribeTopics,
+    };
+
+    for (final topic in topics) {
       try {
         _client!.subscribe(topic, MqttQos.atLeastOnce);
+        if (kDebugMode) print('MQTT SUB: $topic');
       } catch (e) {
         if (kDebugMode) print('Subscribe error $topic: $e');
       }
@@ -90,25 +106,42 @@ class MqttService {
   }
 
   void _listen() {
-    _client!.updates!.listen((events) {
+    _updatesSub?.cancel();
+    final updates = _client?.updates;
+    if (updates == null) return;
+
+    _updatesSub = updates.listen((events) {
       if (events.isEmpty) return;
-      final rec = events.first.payload as MqttPublishMessage;
-      final payload =
-          MqttPublishPayload.bytesToStringAsString(rec.payload.message);
-      final topic = events.first.topic;
 
-      dynamic value;
-      try {
-        value = jsonDecode(payload)['value'];
-      } catch (_) {
-        value = payload.trim();
+      // Xử lý tất cả message trong batch, không chỉ first
+      for (final event in events) {
+        final rec = event.payload as MqttPublishMessage;
+        final payload =
+            MqttPublishPayload.bytesToStringAsString(rec.payload.message);
+        final topic = event.topic;
+
+        dynamic value;
+        try {
+          final decoded = jsonDecode(payload);
+          if (decoded is Map && decoded.containsKey('value')) {
+            value = decoded['value'];
+          } else {
+            value = decoded;
+          }
+        } catch (_) {
+          value = payload.trim();
+        }
+
+        if (kDebugMode) {
+          print('MQTT RX: [$topic] $payload');
+        }
+
+        _messageController.add({
+          'topic': topic,
+          'value': value,
+          'raw': payload,
+        });
       }
-
-      _messageController.add({
-        'topic': topic,
-        'value': value,
-        'raw': payload,
-      });
     });
   }
 
@@ -125,13 +158,18 @@ class MqttService {
     publish(AppConfig.cmndFan, cmd);
   }
 
-  void disconnect() {
-    _client?.disconnect();
+  Future<void> disconnect() async {
+    _updatesSub?.cancel();
+    _updatesSub = null;
     _isConnected = false;
+    try {
+      _client?.disconnect();
+    } catch (_) {}
+    _client = null;
   }
 
-  void dispose() {
-    disconnect();
-    _messageController.close();
+  Future<void> dispose() async {
+    await disconnect();
+    await _messageController.close();
   }
 }

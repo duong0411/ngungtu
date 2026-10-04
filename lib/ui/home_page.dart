@@ -350,6 +350,8 @@ class _StatusStrip extends StatelessWidget {
           const SizedBox(height: 10),
           _kv(context, 'Quạt tản nhiệt', c.fanOn ? 'ĐANG CHẠY' : 'TẮT'),
           _kv(context, 'Chip ID', '789'),
+          _kv(context, 'MQTT', c.mqttConnected ? 'Đã kết nối' : 'Mất kết nối'),
+          _kv(context, 'Gói nhận', '${c.rxCount}'),
           _kv(
             context,
             'Cập nhật',
@@ -357,6 +359,17 @@ class _StatusStrip extends StatelessWidget {
                 ? '—'
                 : '${c.lastUpdate!.hour.toString().padLeft(2, '0')}:${c.lastUpdate!.minute.toString().padLeft(2, '0')}:${c.lastUpdate!.second.toString().padLeft(2, '0')}',
           ),
+          if (c.lastTopic != null) _kv(context, 'Topic cuối', c.lastTopic!),
+          if (c.mqttConnected && !c.hasTelemetry) ...[
+            const SizedBox(height: 8),
+            Text(
+              'App đã subscribe đúng ID 789. Nếu vẫn --: mở Serial ESP32, cần thấy MQTT=1 và dòng Air/Dew/Cold.',
+              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                    color: NgungTuTheme.copper,
+                    fontSize: 12,
+                  ),
+            ),
+          ],
         ],
       ),
     );
