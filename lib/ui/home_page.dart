@@ -23,6 +23,21 @@ class HomePage extends StatelessWidget {
     return 'Máy đang tạm nghỉ';
   }
 
+  /// Trạng thái ngắn — khớp dòng cuối trên OLED (không hiện WiFi/MQTT).
+  String _shortMachineStatus(CondenserProvider c) {
+    if (!c.mqttConnected) return 'Chờ máy';
+    final s = c.status.trim();
+    if (s.isEmpty) return '--';
+    final lower = s.toLowerCase();
+    if (lower.contains('ngung tu') || lower.contains('đang ngưng')) return 'Đang thu nước';
+    if (lower.contains('kho') || lower.contains('khô')) return 'Không khí khô';
+    if (lower.contains('dong bang') || lower.contains('đóng băng')) return 'Bảo vệ lạnh';
+    if (lower.contains('san sang') || lower.contains('sẵn sàng')) return 'Sẵn sàng';
+    if (lower.contains('bat tu') || lower.contains('bật')) return 'Đang chạy';
+    if (s.length <= 16) return s;
+    return '${s.substring(0, 15)}…';
+  }
+
   @override
   Widget build(BuildContext context) {
     final c = context.watch<CondenserProvider>();
@@ -136,16 +151,32 @@ class HomePage extends StatelessWidget {
                     const SizedBox(height: 20),
                     _HeroInsight(c: c),
                     const SizedBox(height: 22),
-                    Text('Không khí hôm nay', style: Theme.of(context).textTheme.titleLarge),
+                    Text('Như trên màn hình máy', style: Theme.of(context).textTheme.titleLarge),
                     const SizedBox(height: 12),
                     _MetricRow(
-                      left: _Metric('Nhiệt độ', _fmt(c.airTemp, '°C'), Icons.thermostat_rounded, NgungTuTheme.copper),
+                      left: _Metric('Không khí', _fmt(c.airTemp, '°C'), Icons.thermostat_rounded, NgungTuTheme.copper),
                       right: _Metric('Độ ẩm', _fmt(c.humidity, '%', d: 0), Icons.water_drop_rounded, NgungTuTheme.aqua),
                     ),
                     const SizedBox(height: 12),
                     _MetricRow(
                       left: _Metric('Điểm sương', _fmt(c.dewPoint, '°C'), Icons.water_rounded, NgungTuTheme.ice),
                       right: _Metric('Bề mặt lạnh', _fmt(c.coldPlate, '°C'), Icons.ac_unit_rounded, const Color(0xFF7BDFF2)),
+                    ),
+                    const SizedBox(height: 12),
+                    _MetricRow(
+                      left: _Metric('Mức cần đạt', _fmt(c.setpoint, '°C'), Icons.flag_rounded, const Color(0xFFF4A261)),
+                      right: _Metric('Làm lạnh', _fmt(c.tecPercent, '%', d: 0), Icons.bolt_rounded, NgungTuTheme.ice),
+                    ),
+                    const SizedBox(height: 12),
+                    _MetricRow(
+                      left: _Metric('Quạt', _fmt(c.fanPercent, '%', d: 0), Icons.air_rounded, const Color(0xFF7BDFF2)),
+                      right: _Metric(
+                        'Trạng thái máy',
+                        _shortMachineStatus(c),
+                        Icons.sensors_rounded,
+                        live ? NgungTuTheme.aqua : NgungTuTheme.copper,
+                        compact: true,
+                      ),
                     ),
                     const SizedBox(height: 22),
                     _LearnCard(),
@@ -308,11 +339,12 @@ class _MetricRow extends StatelessWidget {
 }
 
 class _Metric extends StatelessWidget {
-  const _Metric(this.label, this.value, this.icon, this.color);
+  const _Metric(this.label, this.value, this.icon, this.color, {this.compact = false});
   final String label;
   final String value;
   final IconData icon;
   final Color color;
+  final bool compact;
 
   @override
   Widget build(BuildContext context) {
@@ -339,9 +371,12 @@ class _Metric extends StatelessWidget {
           const SizedBox(height: 2),
           Text(
             value,
+            maxLines: compact ? 2 : 1,
+            overflow: TextOverflow.ellipsis,
             style: Theme.of(context).textTheme.headlineMedium?.copyWith(
-                  fontSize: 24,
+                  fontSize: compact ? 16 : 24,
                   fontWeight: FontWeight.w800,
+                  height: 1.15,
                 ),
           ),
         ],

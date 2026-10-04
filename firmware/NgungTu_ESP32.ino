@@ -311,10 +311,11 @@ void drawOLED() {
   oled.setTextColor(SSD1306_WHITE);
 
   if (portalActive) {
-    oled.setCursor(0, 0);  oled.println("CAU HINH WIFI");
-    oled.setCursor(0, 14); oled.println("Ket noi AP: NgungTu");
+    // Màn cấu hình mạng — không hiện chữ WiFi trên OLED
+    oled.setCursor(0, 0);  oled.println("CAU HINH MANG");
+    oled.setCursor(0, 14); oled.println("Ket noi: NgungTu");
     oled.setCursor(0, 28); oled.println("Mo: 192.168.4.1");
-    oled.setCursor(0, 48); oled.printf("WiFi luu: %d", wifiCount);
+    oled.setCursor(0, 48); oled.printf("Da luu: %d mang", wifiCount);
     oled.display();
     return;
   }
@@ -324,12 +325,8 @@ void drawOLED() {
   oled.setCursor(0, 22);  oled.printf("Mat lanh: %.1fC", coldT);
   oled.setCursor(0, 33);  oled.printf("Muc tieu: %.1fC", running ? setpoint : 0.0f);
   oled.setCursor(0, 44);  oled.printf("So:%d%% Quat:%d%%", tecPwm * 100 / 255, fanPwm * 100 / 255);
-  oled.setCursor(0, 55);
-  if (WiFi.status() == WL_CONNECTED) {
-    oled.printf("%s %s", mqttClient.isConnected() ? "MQTT" : "WiFi", statusMsg);
-  } else {
-    oled.print(statusMsg);
-  }
+  // Chỉ hiện trạng thái vận hành — không hiện WiFi / MQTT
+  oled.setCursor(0, 55);  oled.print(statusMsg);
   oled.display();
 }
 
@@ -468,7 +465,9 @@ void pubTec() {
 }
 
 void pubFan() {
-  mqttPub(DEV_FAN, fanPwm > 0 ? "{\"value\":\"ON\"}" : "{\"value\":\"OFF\"}", true);
+  // Đồng bộ OLED: gửi % quạt để app hiển thị giống màn hình
+  int pct = fanPwm * 100 / 255;
+  mqttPub(DEV_FAN, "{\"value\":" + String(pct) + "}", true);
 }
 
 void pubStatus() {
@@ -684,7 +683,7 @@ void startPortal() {
   webServer.onNotFound(handleNotFound);
   webServer.begin();
   Serial.println("Portal OK — ket noi WiFi: NgungTu → http://192.168.4.1");
-  statusMsg = "Cau hinh WiFi";
+  statusMsg = "Cau hinh mang";
 }
 
 void checkBootButtonForPortal() {

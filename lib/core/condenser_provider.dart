@@ -45,6 +45,7 @@ class CondenserProvider extends ChangeNotifier {
   double? coldPlate;
   double? setpoint;
   double? tecPercent;
+  double? fanPercent;
   bool fanOn = false;
   String status = 'Chưa kết nối';
 
@@ -107,7 +108,14 @@ class CondenserProvider extends ChangeNotifier {
     } else if (_is(topic, AppConfig.topicTec) || topic.endsWith('_tec/status')) {
       tecPercent = _asDouble(value);
     } else if (_is(topic, AppConfig.topicFan) || topic.endsWith('_fan_livingroom/status')) {
-      fanOn = _asOn(value);
+      final pct = _asDouble(value);
+      if (pct != null) {
+        fanPercent = pct.clamp(0, 100);
+        fanOn = fanPercent! > 0;
+      } else {
+        fanOn = _asOn(value);
+        fanPercent = fanOn ? 100 : 0;
+      }
     } else if (_is(topic, AppConfig.topicPower) || topic.endsWith('_power/status')) {
       powerOn = _asOn(value);
     } else if (_is(topic, AppConfig.topicStatus) ||
@@ -133,6 +141,7 @@ class CondenserProvider extends ChangeNotifier {
         'coldPlate': coldPlate,
         'setpoint': setpoint,
         'tecPercent': tecPercent,
+        'fanPercent': fanPercent,
         'fan': fanOn,
         'power': powerOn,
         'status': status,
