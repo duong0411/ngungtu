@@ -66,31 +66,36 @@ jobs:
       - name: Pub get
         run: flutter pub get
 
-      # IPA chưa codesign (CI không có Apple certificate).
-      # Cài lên máy thật vẫn cần ký bằng Xcode / Apple Developer.
-      - name: Build IPA (no codesign)
-        run: flutter build ipa --release --no-codesign
+      # `flutter build ipa` vẫn đòi Development Team dù --no-codesign.
+      # CI không có Apple cert → build ios unsigned rồi tự đóng gói .ipa
+      - name: Build iOS (no codesign)
+        run: flutter build ios --release --no-codesign
 
-      - name: Prepare IPA
+      - name: Package unsigned IPA
         run: |
-          mkdir -p dist
-          # flutter build ipa --no-codesign thường ra build/ios/ipa/*.ipa
-          IPA_FILE=$(ls build/ios/ipa/*.ipa 2>/dev/null | head -n 1 || true)
-          if [ -n "$IPA_FILE" ]; then
-            cp "$IPA_FILE" dist/ngungtu-stem.ipa
-          else
-            # Fallback: đóng gói Runner.app thành IPA chuẩn (Payload/)
-            APP_PATH=$(find build/ios -name "Runner.app" -type d | head -n 1)
-            if [ -z "$APP_PATH" ]; then
-              echo "Runner.app not found"
-              find build/ios -maxdepth 4 -type d -print
-              exit 1
+          set -e
+          mkdir -p dist Payload
+          APP_PATH=""
+          for candidate in \
+            build/ios/iphoneos/Runner.app \
+            build/ios/Release-iphoneos/Runner.app \
+            "$(find build/ios -name 'Runner.app' -type d | head -n 1)"; do
+            if [ -d "$candidate" ]; then
+              APP_PATH="$candidate"
+              break
             fi
-            mkdir -p Payload
-            cp -R "$APP_PATH" Payload/
-            zip -r dist/ngungtu-stem.ipa Payload
+          done
+          if [ -z "$APP_PATH" ] || [ ! -d "$APP_PATH" ]; then
+            echo "Runner.app not found"
+            find build/ios -maxdepth 5 -type d -print || true
+            exit 1
           fi
-          ls -lh dist/
+          echo "Packaging: $APP_PATH"
+          rm -rf Payload/*
+          cp -R "$APP_PATH" Payload/
+          # IPA = zip chứa Payload/Runner.app
+          (cd . && zip -qry dist/ngungtu-stem.ipa Payload)
+          ls -lh dist/ngungtu-stem.ipa
 
       - name: Upload IPA artifact
         uses: actions/upload-artifact@v4

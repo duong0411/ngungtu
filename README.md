@@ -26,7 +26,7 @@ Push lên `main` sẽ tự:
 
 Tải tại tab **Releases** của repo.
 
-> IPA trên CI chưa codesign. Cài lên iPhone thật cần ký bằng Apple Developer / Xcode.
+> IPA trên CI build bằng `flutter build ios --no-codesign` rồi đóng gói thủ công (không cần Apple Team trên GitHub Actions). Cài iPhone thật vẫn cần ký bằng Xcode / Apple Developer.
 
 ## Kết nối ESP32
 
