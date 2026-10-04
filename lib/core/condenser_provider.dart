@@ -75,16 +75,23 @@ class CondenserProvider extends ChangeNotifier {
     rxCount++;
 
     final is789 = topic.contains('789');
+    // Bỏ qua LWT offline — không tính là đã có telemetry
+    final isLwtOffline = (topic == AppConfig.topicOnline || topic == 'tele/789/status') &&
+        value.toString().toLowerCase() == 'offline';
+
     if (is789) {
-      rx789Count++;
+      if (!isLwtOffline) rx789Count++;
       _log('RX789 $topic → $raw');
     }
 
     if (_is(topic, AppConfig.topicOnline) || topic == 'tele/789/status') {
       online = value.toString().toLowerCase() == 'online';
-      status = online
-          ? (hasTelemetry ? 'ESP32 online' : 'ESP32 online — chờ số liệu...')
-          : status;
+      if (online) {
+        status = hasTelemetry ? 'ESP32 online' : 'ESP32 online — chờ số liệu...';
+      } else {
+        // Retained LWT "offline" — ESP có thể vẫn đang chạy, đừng coi như chết hẳn
+        status = 'Nhận LWT offline — chờ telemetry ESP...';
+      }
     } else if (_is(topic, AppConfig.topicTemp) || topic.endsWith('_temp_livingroom/status')) {
       airTemp = _asDouble(value);
     } else if (_is(topic, AppConfig.topicHumi) || topic.endsWith('_humi_living_room/status')) {

@@ -441,13 +441,15 @@ class _MqttDebugPanel extends StatelessWidget {
           ),
           const SizedBox(height: 4),
           Text(
-            c.mqttConnected
-                ? (c.rx789Count > 0
-                    ? 'Đang nhận gói từ ESP32 (789)'
-                    : 'Broker OK — chờ gói 789 từ ESP')
-                : 'Chưa kết nối broker',
+            !c.mqttConnected
+                ? 'Chưa kết nối broker'
+                : c.hasTelemetry
+                    ? 'Đang nhận thông số ESP32 (789)'
+                    : (c.lastPayload == 'offline'
+                        ? 'Chỉ nhận LWT offline — chờ temp/humi (nạp lại firmware retain)'
+                        : 'Broker OK — chờ telemetry temp/humi từ ESP'),
             style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                  color: c.rx789Count > 0 ? NgungTuTheme.aqua : NgungTuTheme.copper,
+                  color: c.hasTelemetry ? NgungTuTheme.aqua : NgungTuTheme.copper,
                   fontSize: 12,
                 ),
           ),
