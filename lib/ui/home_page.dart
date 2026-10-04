@@ -96,6 +96,8 @@ class HomePage extends StatelessWidget {
                     _MetricGrid(c: c),
                     const SizedBox(height: 20),
                     _StatusStrip(c: c),
+                    const SizedBox(height: 16),
+                    _MqttDebugPanel(c: c),
                   ],
                 ),
               ),
@@ -351,7 +353,8 @@ class _StatusStrip extends StatelessWidget {
           _kv(context, 'Quạt tản nhiệt', c.fanOn ? 'ĐANG CHẠY' : 'TẮT'),
           _kv(context, 'Chip ID', '789'),
           _kv(context, 'MQTT', c.mqttConnected ? 'Đã kết nối' : 'Mất kết nối'),
-          _kv(context, 'Gói nhận', '${c.rxCount}'),
+          _kv(context, 'Gói nhận (all)', '${c.rxCount}'),
+          _kv(context, 'Gói chip 789', '${c.rx789Count}'),
           _kv(
             context,
             'Cập nhật',
@@ -360,10 +363,20 @@ class _StatusStrip extends StatelessWidget {
                 : '${c.lastUpdate!.hour.toString().padLeft(2, '0')}:${c.lastUpdate!.minute.toString().padLeft(2, '0')}:${c.lastUpdate!.second.toString().padLeft(2, '0')}',
           ),
           if (c.lastTopic != null) _kv(context, 'Topic cuối', c.lastTopic!),
-          if (c.mqttConnected && !c.hasTelemetry) ...[
+          if (!c.mqttConnected && c.lastError.isNotEmpty) ...[
             const SizedBox(height: 8),
             Text(
-              'App đã subscribe đúng ID 789. Nếu vẫn --: mở Serial ESP32, cần thấy MQTT=1 và dòng Air/Dew/Cold.',
+              'Lỗi: ${c.lastError}',
+              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                    color: NgungTuTheme.copper,
+                    fontSize: 12,
+                  ),
+            ),
+          ],
+          if (c.mqttConnected && c.rx789Count == 0) ...[
+            const SizedBox(height: 8),
+            Text(
+              'App đã vào broker nhưng chưa nhận gói 789. Kiểm tra Serial ESP: [MQTT] CONNECTED và MQTT=1.',
               style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                     color: NgungTuTheme.copper,
                     fontSize: 12,
@@ -389,6 +402,68 @@ class _StatusStrip extends StatelessWidget {
             ),
           ),
           Text(v, style: Theme.of(context).textTheme.labelLarge),
+        ],
+      ),
+    );
+  }
+}
+
+class _MqttDebugPanel extends StatelessWidget {
+  const _MqttDebugPanel({required this.c});
+  final CondenserProvider c;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.black.withValues(alpha: 0.35),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'MQTT DEBUG',
+            style: Theme.of(context).textTheme.titleLarge?.copyWith(fontSize: 16),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            c.mqttConnected
+                ? (c.rx789Count > 0
+                    ? 'Đang nhận gói từ ESP32 (789)'
+                    : 'Broker OK — chờ gói 789 từ ESP')
+                : 'Chưa kết nối broker',
+            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                  color: c.rx789Count > 0 ? NgungTuTheme.aqua : NgungTuTheme.copper,
+                  fontSize: 12,
+                ),
+          ),
+          const SizedBox(height: 10),
+          if (c.debugLog.isEmpty)
+            Text(
+              'Chưa có log. Nhấn refresh góc phải.',
+              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                    color: NgungTuTheme.soft.withValues(alpha: 0.55),
+                    fontSize: 12,
+                  ),
+            )
+          else
+            ...c.debugLog.take(12).map(
+                  (line) => Padding(
+                    padding: const EdgeInsets.only(bottom: 4),
+                    child: Text(
+                      line,
+                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                            fontFamily: 'monospace',
+                            fontSize: 11,
+                            color: NgungTuTheme.soft.withValues(alpha: 0.8),
+                          ),
+                    ),
+                  ),
+                ),
         ],
       ),
     );

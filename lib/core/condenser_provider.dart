@@ -16,7 +16,10 @@ class CondenserProvider extends ChangeNotifier {
   bool powerOn = true;
   DateTime? lastUpdate;
   String? lastTopic;
+  String? lastPayload;
   int rxCount = 0;
+  int rx789Count = 0;
+  final List<String> debugLog = [];
 
   double? airTemp;
   double? humidity;
@@ -28,12 +31,22 @@ class CondenserProvider extends ChangeNotifier {
   String status = 'Chưa kết nối';
 
   bool get mqttConnected => _mqtt.isConnected;
+  String get lastError => _mqtt.lastError;
   bool get hasTelemetry =>
       airTemp != null || humidity != null || dewPoint != null || coldPlate != null;
+
+  void _log(String line) {
+    final ts = DateTime.now();
+    final stamp =
+        '${ts.hour.toString().padLeft(2, '0')}:${ts.minute.toString().padLeft(2, '0')}:${ts.second.toString().padLeft(2, '0')}';
+    debugLog.insert(0, '[$stamp] $line');
+    if (debugLog.length > 30) debugLog.removeLast();
+  }
 
   Future<void> start() async {
     connecting = true;
     status = 'Đang kết nối MQTT...';
+    _log('Connecting broker...');
     notifyListeners();
 
     _sub?.cancel();
@@ -43,21 +56,28 @@ class CondenserProvider extends ChangeNotifier {
     connecting = false;
     if (!ok) {
       status = 'Không kết nối được MQTT';
+      _log('CONNECT FAIL: ${lastError.isEmpty ? "?" : lastError}');
       notifyListeners();
       return;
     }
 
     status = 'MQTT OK — chờ ESP32 publish (chip 789)...';
+    _log('CONNECTED + subscribed tele/+/status');
     notifyListeners();
   }
 
   void _onMessage(Map<String, dynamic> data) {
     final topic = data['topic'] as String? ?? '';
     final value = data['value'];
+    final raw = data['raw']?.toString() ?? '';
     lastTopic = topic;
+    lastPayload = raw;
     rxCount++;
+    _log('RX $topic → $raw');
 
-    // Match linh hoạt: full topic hoặc endsWith device suffix
+    final is789 = topic.contains('789');
+    if (is789) rx789Count++;
+
     if (_is(topic, AppConfig.topicOnline) || topic == 'tele/789/status') {
       online = value.toString().toLowerCase() == 'online';
       if (online && !hasTelemetry) {
@@ -85,7 +105,6 @@ class CondenserProvider extends ChangeNotifier {
         (topic.endsWith('_status/status') && topic.contains('789_status'))) {
       status = value?.toString() ?? status;
     } else {
-      // Topic khác (vd chip 123) — bỏ qua, không cập nhật lastUpdate UI chính
       if (kDebugMode) print('MQTT ignore topic: $topic');
       notifyListeners();
       return;
@@ -100,12 +119,14 @@ class CondenserProvider extends ChangeNotifier {
   void togglePower() {
     if (!_mqtt.isConnected) {
       status = 'MQTT chưa kết nối — nhấn refresh';
+      _log('TX blocked: not connected');
       notifyListeners();
       return;
     }
     final next = !powerOn;
     powerOn = next;
     status = next ? 'Đã gửi lệnh BẬT...' : 'Đã gửi lệnh TẮT...';
+    _log('TX power=${next ? "ON" : "OFF"}');
     notifyListeners();
     _mqtt.setPower(next);
   }

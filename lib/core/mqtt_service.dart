@@ -13,32 +13,33 @@ class MqttService {
   bool _isConnected = false;
   bool get isConnected => _isConnected;
 
+  String lastError = '';
+
   final _messageController = StreamController<Map<String, dynamic>>.broadcast();
   Stream<Map<String, dynamic>> get messages => _messageController.stream;
 
   Future<bool> connect({String brokerUrl = AppConfig.brokerUrl}) async {
-    // Luôn kết nối lại sạch để tránh kẹt state
     await disconnect();
+    lastError = '';
 
     final uri = Uri.parse(brokerUrl);
     final scheme = uri.scheme.isNotEmpty ? uri.scheme : 'wss';
-    final isSecure = scheme == 'wss' || scheme == 'https';
     final host = uri.host.isNotEmpty ? uri.host : 'mqtt.duynguyen.io.vn';
-    final port = uri.port != 0 ? uri.port : (isSecure ? 443 : 8083);
+    final port = uri.port != 0 ? uri.port : 443;
     final path = uri.path.isNotEmpty ? uri.path : '/mqtt';
     final clientId = 'ngungtu_${DateTime.now().millisecondsSinceEpoch}';
 
-    if (kDebugMode) {
-      print('MQTT: connecting $scheme://$host:$port$path');
-    }
+    // QUAN TRỌNG: với WSS chỉ truyền URL wss://..., KHÔNG set secure=true
+    // (secure chỉ dùng cho MQTT TCP/TLS — set nhầm sẽ fail DNS)
+    final wsUrl = '$scheme://$host$path';
+    if (kDebugMode) print('MQTT: connecting $wsUrl port=$port');
 
-    _client = MqttServerClient.withPort('$scheme://$host$path', clientId, port);
+    _client = MqttServerClient.withPort(wsUrl, clientId, port);
     _client!.useWebSocket = true;
-    _client!.secure = isSecure;
     _client!.websocketProtocols = MqttClientConstants.protocolsSingleDefault;
     _client!.logging(on: kDebugMode);
     _client!.keepAlivePeriod = 30;
-    _client!.connectTimeoutPeriod = 10000;
+    _client!.connectTimeoutPeriod = 12000;
     _client!.autoReconnect = true;
     _client!.resubscribeOnAutoReconnect = true;
 
@@ -67,6 +68,7 @@ class MqttService {
     try {
       await _client!.connect().timeout(const Duration(seconds: 15));
     } catch (e) {
+      lastError = e.toString();
       if (kDebugMode) print('MQTT connect error: $e');
       _isConnected = false;
       try {
@@ -82,6 +84,7 @@ class MqttService {
       return true;
     }
 
+    lastError = _client!.connectionStatus?.toString() ?? 'unknown';
     _isConnected = false;
     return false;
   }
@@ -89,7 +92,6 @@ class MqttService {
   void _subscribeAll() {
     if (_client == null || !_isConnected) return;
 
-    // Wildcard bắt mọi tele/.../status (khớp ESP publish tele/{device}/status)
     final topics = <String>{
       'tele/+/status',
       ...AppConfig.subscribeTopics,
@@ -113,7 +115,6 @@ class MqttService {
     _updatesSub = updates.listen((events) {
       if (events.isEmpty) return;
 
-      // Xử lý tất cả message trong batch, không chỉ first
       for (final event in events) {
         final rec = event.payload as MqttPublishMessage;
         final payload =
@@ -132,9 +133,7 @@ class MqttService {
           value = payload.trim();
         }
 
-        if (kDebugMode) {
-          print('MQTT RX: [$topic] $payload');
-        }
+        if (kDebugMode) print('MQTT RX: [$topic] $payload');
 
         _messageController.add({
           'topic': topic,
