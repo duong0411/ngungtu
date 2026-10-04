@@ -18,12 +18,13 @@ flutter run
 
 Push lên `main` sẽ tự:
 
-1. Build **APK release** (artifact `ngungtu-apk`)
-2. Build **iOS --no-codesign** (artifact `ngungtu-ios-unsigned`)
+1. Build **Android APK** → `ngungtu-stem.apk`
+2. Build **iOS IPA** → `ngungtu-stem.ipa`
+3. Tạo **GitHub Release** và đính kèm 2 file trên
 
-Tải artifact tại tab **Actions** của repo.
+Tải tại tab **Releases** của repo.
 
-> iOS artifact chưa ký certificate — dùng để kiểm tra CI. Cài lên máy thật cần Apple Developer signing.
+> IPA trên CI chưa codesign. Cài lên iPhone thật cần ký bằng Apple Developer / Xcode.
 
 ## Kết nối ESP32
 
