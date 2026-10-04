@@ -32,7 +32,8 @@ class CondenserProvider extends ChangeNotifier {
   StreamSubscription? _sub;
   TelemetrySync? onTelemetry;
 
-  static const int maxHistory = 60;
+  static const int maxHistory = 90;
+  static const Duration _historyInterval = Duration(milliseconds: 800);
 
   bool connecting = false;
   bool online = false;
@@ -150,28 +151,32 @@ class CondenserProvider extends ChangeNotifier {
     }
   }
 
-  void _pushHistory() {
-    // Tránh spam điểm khi nhiều topic đến cùng lúc — lọc ~3s/điểm
-    if (history.isNotEmpty &&
-        DateTime.now().difference(history.last.at) < const Duration(seconds: 3)) {
-      history[history.length - 1] = TelemetryPoint(
-        at: DateTime.now(),
+  TelemetryPoint _snapshot([DateTime? at]) => TelemetryPoint(
+        at: at ?? DateTime.now(),
         airTemp: airTemp,
         humidity: humidity,
         dewPoint: dewPoint,
         coldPlate: coldPlate,
         setpoint: setpoint,
       );
+
+  void _pushHistory() {
+    final now = DateTime.now();
+
+    // Điểm đầu: seed 2 điểm gần nhau để biểu đồ vẽ ngay (không chờ chu kỳ MQTT tiếp)
+    if (history.isEmpty) {
+      history.add(_snapshot(now.subtract(const Duration(seconds: 1))));
+      history.add(_snapshot(now));
       return;
     }
-    history.add(TelemetryPoint(
-      at: DateTime.now(),
-      airTemp: airTemp,
-      humidity: humidity,
-      dewPoint: dewPoint,
-      coldPlate: coldPlate,
-      setpoint: setpoint,
-    ));
+
+    // Topic MQTT tới dồn cục — cập nhật điểm cuối trong ~0.8s, sau đó mới thêm điểm mới
+    if (now.difference(history.last.at) < _historyInterval) {
+      history[history.length - 1] = _snapshot(now);
+      return;
+    }
+
+    history.add(_snapshot(now));
     while (history.length > maxHistory) {
       history.removeAt(0);
     }

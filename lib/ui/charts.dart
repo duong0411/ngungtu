@@ -8,6 +8,11 @@ class TelemetryCharts extends StatelessWidget {
   const TelemetryCharts({super.key, required this.c});
   final CondenserProvider c;
 
+  bool _hasTemp(List<TelemetryPoint> points) =>
+      points.any((p) => p.airTemp != null || p.dewPoint != null || p.coldPlate != null);
+
+  bool _hasHumidity(List<TelemetryPoint> points) => points.any((p) => p.humidity != null);
+
   @override
   Widget build(BuildContext context) {
     final points = c.history;
@@ -25,7 +30,7 @@ class TelemetryCharts extends StatelessWidget {
         ),
         const SizedBox(height: 12),
         _ChartCard(
-          child: points.length < 2
+          child: !_hasTemp(points)
               ? const _EmptyChart(text: 'Đang ghi nhận nhiệt độ...')
               : _TempChart(points: points),
         ),
@@ -33,7 +38,7 @@ class TelemetryCharts extends StatelessWidget {
         Text('Diễn biến độ ẩm', style: Theme.of(context).textTheme.titleLarge),
         const SizedBox(height: 12),
         _ChartCard(
-          child: points.length < 2
+          child: !_hasHumidity(points)
               ? const _EmptyChart(text: 'Đang ghi nhận độ ẩm...')
               : _HumidityChart(points: points),
         ),

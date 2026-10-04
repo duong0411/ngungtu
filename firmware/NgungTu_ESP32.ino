@@ -98,7 +98,7 @@ const byte DNS_PORT = 53;
 
 #define EEPROM_SIZE   512
 #define MAX_WIFI      5
-#define TELEMETRY_MS  5000
+#define TELEMETRY_MS  2000
 #define HEARTBEAT_MS  30000
 #define RECONNECT_MS  10000
 
