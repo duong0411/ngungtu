@@ -9,7 +9,7 @@ import '../core/config.dart';
 import 'theme.dart';
 import 'widgets/feedback.dart';
 
-/// Nhập Chip ID → kết nối MQTT → xác thực thiết bị trước khi xem cảm biến/biểu đồ.
+/// Nhập tên chip → kết nối thiết bị → vào màn cảm biến / biểu đồ.
 class ConnectPage extends StatefulWidget {
   const ConnectPage({super.key});
 
@@ -25,7 +25,9 @@ class _ConnectPageState extends State<ConnectPage> {
   @override
   void initState() {
     super.initState();
-    _chip = TextEditingController(text: AppConfig.chipId);
+    _chip = TextEditingController(
+      text: AppConfig.chipId == AppConfig.defaultChipId ? AppConfig.defaultChipId : AppConfig.chipId,
+    );
     WidgetsBinding.instance.addPostFrameCallback((_) => _showPendingBanner());
   }
 
@@ -35,7 +37,6 @@ class _ConnectPageState extends State<ConnectPage> {
     if (msg != null) {
       _bannerShown = true;
       setState(() => _successStatus = msg);
-      showAppSnack(context, message: msg, success: true);
     }
   }
 
@@ -48,7 +49,7 @@ class _ConnectPageState extends State<ConnectPage> {
   Future<void> _connect() async {
     final id = _chip.text.trim();
     if (id.isEmpty) {
-      showAppSnack(context, message: 'Vui lòng nhập Chip ID của máy ESP32');
+      showAppSnack(context, message: 'Vui lòng nhập tên chip của máy');
       return;
     }
 
@@ -60,37 +61,34 @@ class _ConnectPageState extends State<ConnectPage> {
     if (!mounted) return;
 
     if (!ok) {
-      showAppSnack(context, message: 'Chưa kết nối MQTT — kiểm tra mạng rồi thử lại');
+      showAppSnack(context, message: 'Chưa kết nối được — kiểm tra mạng rồi thử lại');
       return;
     }
 
     showAppSnack(
       context,
-      message: 'Đã gửi yêu cầu — đang chờ chip $id phản hồi...',
+      message: 'Đang tìm máy $id...',
       success: true,
     );
+  }
+
+  String _friendlyHint(CondenserProvider c, String chip) {
+    if (c.connecting) return 'Đang kết nối với máy của bạn...';
+    if (!c.chipBound) return 'Nhập tên chip rồi bấm Tiếp tục để xem nước và biểu đồ.';
+    if (!c.mqttConnected) return 'Chưa kết nối được — hãy thử lại.';
+    if (!c.chipVerified || c.linkedChipId != AppConfig.chipId) {
+      return 'Đang chờ máy $chip phản hồi...';
+    }
+    if (!c.online && !c.hasTelemetry) return 'Máy $chip chưa sẵn sàng — hãy bật thiết bị.';
+    return 'Đã tìm thấy máy — đang mở bảng theo dõi...';
   }
 
   @override
   Widget build(BuildContext context) {
     final c = context.watch<CondenserProvider>();
     final auth = context.watch<AuthProvider>();
-    final chip = _chip.text.trim().isEmpty ? AppConfig.chipId : _chip.text.trim();
-
-    String step;
-    if (c.connecting) {
-      step = 'Đang kết nối MQTT...';
-    } else if (!c.chipBound) {
-      step = 'Nhập Chip ID rồi bấm Kết nối để xem cảm biến & biểu đồ';
-    } else if (!c.mqttConnected) {
-      step = 'Chưa kết nối MQTT — kéo xuống hoặc bấm Kết nối lại';
-    } else if (!c.chipVerified || c.linkedChipId != AppConfig.chipId) {
-      step = 'Đã MQTT — đang chờ chip $chip phản hồi...';
-    } else if (!c.online && !c.hasTelemetry) {
-      step = 'Chip $chip chưa online';
-    } else {
-      step = 'Đã xác thực chip $chip — vào bảng điều khiển...';
-    }
+    final chip = _chip.text.trim().isEmpty ? AppConfig.defaultChipId : _chip.text.trim();
+    final waiting = c.chipBound && !c.canEnterSystem;
 
     return Scaffold(
       body: Container(
@@ -106,9 +104,9 @@ class _ConnectPageState extends State<ConnectPage> {
         child: Stack(
           children: [
             Positioned(
-              top: -70,
-              right: -40,
-              child: _orb(200, NgungTuTheme.aqua.withValues(alpha: 0.12))
+              top: -80,
+              right: -50,
+              child: _orb(220, NgungTuTheme.aqua.withValues(alpha: 0.12))
                   .animate(onPlay: (a) => a.repeat(reverse: true))
                   .scale(
                     begin: const Offset(0.96, 0.96),
@@ -116,255 +114,233 @@ class _ConnectPageState extends State<ConnectPage> {
                     duration: 5.seconds,
                   ),
             ),
+            Positioned(
+              bottom: 120,
+              left: -60,
+              child: _orb(180, NgungTuTheme.ice.withValues(alpha: 0.07)),
+            ),
             SafeArea(
-              child: RefreshIndicator(
-                color: NgungTuTheme.aqua,
-                onRefresh: () async {
-                  if (c.chipBound) await c.reconnect();
-                },
-                child: ListView(
-                  physics: const AlwaysScrollableScrollPhysics(parent: BouncingScrollPhysics()),
-                  padding: const EdgeInsets.fromLTRB(28, 16, 28, 32),
-                  children: [
-                    Row(
-                      children: [
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                          decoration: BoxDecoration(
-                            borderRadius: BorderRadius.circular(999),
-                            color: NgungTuTheme.aqua.withValues(alpha: 0.12),
-                            border: Border.all(color: NgungTuTheme.aqua.withValues(alpha: 0.28)),
-                          ),
-                          child: Text(
-                            'KẾT NỐI THIẾT BỊ',
-                            style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                                  color: NgungTuTheme.ice,
-                                  fontSize: 11,
-                                  letterSpacing: 1.1,
-                                ),
-                          ),
-                        ),
-                        const Spacer(),
-                        IconButton(
-                          tooltip: 'Đăng xuất',
-                          onPressed: () async {
-                            context.read<CondenserProvider>().disconnectChip();
-                            await auth.clearBoundChip();
-                            await auth.logout();
-                          },
-                          icon: Icon(
-                            Icons.logout_rounded,
-                            color: NgungTuTheme.soft.withValues(alpha: 0.75),
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 28),
-                    Text(
-                      'NGƯNG TỤ',
-                      style: Theme.of(context).textTheme.displayMedium?.copyWith(
-                            fontSize: 44,
-                            height: 0.95,
-                            letterSpacing: -1.2,
-                          ),
-                    ).animate().fadeIn(duration: 400.ms).slideY(begin: 0.08),
-                    const SizedBox(height: 10),
-                    Text(
-                      'Nhập Chip ID trên ESP32 để hiển thị thông số cảm biến và biểu đồ realtime.',
-                      style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                            color: NgungTuTheme.ice.withValues(alpha: 0.9),
-                            height: 1.45,
-                            fontSize: 16,
-                          ),
-                    ),
-                    const SizedBox(height: 28),
-                    if (_successStatus != null) ...[
-                      Container(
-                        width: double.infinity,
-                        padding: const EdgeInsets.all(16),
-                        margin: const EdgeInsets.only(bottom: 16),
-                        decoration: BoxDecoration(
-                          borderRadius: BorderRadius.circular(18),
-                          color: NgungTuTheme.aqua.withValues(alpha: 0.14),
-                          border: Border.all(color: NgungTuTheme.aqua.withValues(alpha: 0.35)),
-                        ),
-                        child: Row(
-                          children: [
-                            const Icon(Icons.check_circle_rounded, color: NgungTuTheme.aqua),
-                            const SizedBox(width: 12),
-                            Expanded(
-                              child: Text(
-                                _successStatus!,
-                                style: const TextStyle(
-                                  color: NgungTuTheme.soft,
-                                  fontWeight: FontWeight.w700,
-                                  fontSize: 15,
-                                ),
-                              ),
+              child: ListView(
+                padding: const EdgeInsets.fromLTRB(28, 12, 28, 32),
+                children: [
+                  Row(
+                    children: [
+                      Text(
+                        'Chọn máy',
+                        style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                              fontSize: 16,
+                              color: NgungTuTheme.soft.withValues(alpha: 0.85),
                             ),
-                          ],
-                        ),
-                      ).animate().fadeIn(duration: 350.ms).slideY(begin: -0.08),
-                    ],
-                    Container(
-                      padding: const EdgeInsets.all(20),
-                      decoration: BoxDecoration(
-                        borderRadius: BorderRadius.circular(24),
-                        color: NgungTuTheme.panel.withValues(alpha: 0.72),
-                        border: Border.all(color: NgungTuTheme.aqua.withValues(alpha: 0.22)),
                       ),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
+                      const Spacer(),
+                      IconButton(
+                        tooltip: 'Đăng xuất',
+                        onPressed: () async {
+                          context.read<CondenserProvider>().disconnectChip();
+                          await auth.clearBoundChip();
+                          await auth.logout();
+                        },
+                        icon: Icon(
+                          Icons.logout_rounded,
+                          color: NgungTuTheme.soft.withValues(alpha: 0.75),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 20),
+                  Text(
+                    'NGƯNG TỤ',
+                    style: Theme.of(context).textTheme.displayMedium?.copyWith(
+                          fontSize: 44,
+                          height: 0.95,
+                          letterSpacing: -1.2,
+                        ),
+                  ).animate().fadeIn(duration: 400.ms).slideY(begin: 0.08),
+                  const SizedBox(height: 10),
+                  Text(
+                    'Nhập tên chip trên máy để theo dõi cảm biến và biểu đồ.',
+                    style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                          color: NgungTuTheme.ice.withValues(alpha: 0.9),
+                          height: 1.45,
+                          fontSize: 16,
+                        ),
+                  ),
+                  const SizedBox(height: 24),
+                  if (_successStatus != null) ...[
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(14),
+                      margin: const EdgeInsets.only(bottom: 18),
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(16),
+                        color: NgungTuTheme.aqua.withValues(alpha: 0.14),
+                        border: Border.all(color: NgungTuTheme.aqua.withValues(alpha: 0.35)),
+                      ),
+                      child: Row(
                         children: [
-                          Text(
-                            'Chip ID',
-                            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                                  color: NgungTuTheme.soft.withValues(alpha: 0.65),
-                                  fontSize: 13,
-                                ),
-                          ),
-                          const SizedBox(height: 10),
-                          TextField(
-                            controller: _chip,
-                            keyboardType: TextInputType.number,
-                            inputFormatters: [
-                              FilteringTextInputFormatter.allow(RegExp(r'[0-9A-Za-z_\-]')),
-                            ],
-                            style: Theme.of(context).textTheme.displayMedium?.copyWith(
-                                  fontSize: 28,
-                                  color: NgungTuTheme.aqua,
-                                  letterSpacing: 1.5,
-                                ),
-                            decoration: InputDecoration(
-                              hintText: AppConfig.defaultChipId,
-                              hintStyle: TextStyle(
-                                color: NgungTuTheme.aqua.withValues(alpha: 0.35),
-                                fontSize: 28,
-                                fontWeight: FontWeight.w800,
-                              ),
-                              prefixIcon: const Icon(Icons.memory_rounded, color: NgungTuTheme.ice),
-                              filled: true,
-                              fillColor: Colors.white.withValues(alpha: 0.05),
-                              contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 18),
-                              enabledBorder: OutlineInputBorder(
-                                borderRadius: BorderRadius.circular(16),
-                                borderSide: BorderSide(color: Colors.white.withValues(alpha: 0.08)),
-                              ),
-                              focusedBorder: OutlineInputBorder(
-                                borderRadius: BorderRadius.circular(16),
-                                borderSide: const BorderSide(color: NgungTuTheme.aqua, width: 1.5),
+                          const Icon(Icons.check_circle_rounded, color: NgungTuTheme.aqua, size: 22),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: Text(
+                              _successStatus!,
+                              style: const TextStyle(
+                                color: NgungTuTheme.soft,
+                                fontWeight: FontWeight.w700,
+                                fontSize: 14,
                               ),
                             ),
-                            onChanged: (_) => setState(() {}),
-                          ),
-                          const SizedBox(height: 8),
-                          Text(
-                            'Firmware Ngưng Tụ mặc định dùng Chip ID ${AppConfig.defaultChipId}.',
-                            style: Theme.of(context).textTheme.bodyMedium?.copyWith(fontSize: 12),
-                          ),
-                          const SizedBox(height: 18),
-                          _statusRow('MQTT', c.mqttConnected ? 'Đã kết nối' : 'Chưa kết nối', c.mqttConnected),
-                          const SizedBox(height: 10),
-                          _statusRow(
-                            'Chip ID',
-                            c.chipVerified && c.linkedChipId == AppConfig.chipId
-                                ? 'Khớp ${c.linkedChipId}'
-                                : c.chipBound
-                                    ? 'Đang chờ $chip'
-                                    : 'Chưa gắn',
-                            c.chipVerified && c.linkedChipId == AppConfig.chipId,
-                          ),
-                          const SizedBox(height: 10),
-                          _statusRow(
-                            'Cảm biến',
-                            c.hasTelemetry
-                                ? 'Có dữ liệu'
-                                : c.online
-                                    ? 'Online'
-                                    : 'Chưa có',
-                            c.hasTelemetry || c.online,
                           ),
                         ],
                       ),
-                    ).animate().fadeIn(delay: 80.ms).slideY(begin: 0.05),
-                    const SizedBox(height: 20),
-                    Text(
-                      step,
+                    ).animate().fadeIn(duration: 350.ms),
+                  ],
+                  Container(
+                    padding: const EdgeInsets.fromLTRB(20, 22, 20, 22),
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(24),
+                      color: NgungTuTheme.panel.withValues(alpha: 0.65),
+                      border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Tên chip',
+                          style: Theme.of(context).textTheme.titleLarge?.copyWith(fontSize: 17),
+                        ),
+                        const SizedBox(height: 6),
+                        Text(
+                          'Dùng đúng mã gắn trên máy ESP32 của bạn.',
+                          style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                                color: NgungTuTheme.soft.withValues(alpha: 0.6),
+                                fontSize: 13,
+                              ),
+                        ),
+                        const SizedBox(height: 18),
+                        TextField(
+                          controller: _chip,
+                          keyboardType: TextInputType.number,
+                          textInputAction: TextInputAction.done,
+                          onSubmitted: (_) {
+                            if (!c.connecting) _connect();
+                          },
+                          inputFormatters: [
+                            FilteringTextInputFormatter.allow(RegExp(r'[0-9A-Za-z_\-]')),
+                          ],
+                          style: Theme.of(context).textTheme.displayMedium?.copyWith(
+                                fontSize: 32,
+                                color: NgungTuTheme.aqua,
+                                letterSpacing: 2,
+                              ),
+                          decoration: InputDecoration(
+                            hintText: 'Ví dụ ${AppConfig.defaultChipId}',
+                            hintStyle: TextStyle(
+                              color: NgungTuTheme.aqua.withValues(alpha: 0.28),
+                              fontSize: 22,
+                              fontWeight: FontWeight.w700,
+                              letterSpacing: 0.5,
+                            ),
+                            prefixIcon: const Padding(
+                              padding: EdgeInsets.only(left: 8),
+                              child: Icon(Icons.memory_rounded, color: NgungTuTheme.ice, size: 28),
+                            ),
+                            filled: true,
+                            fillColor: Colors.white.withValues(alpha: 0.05),
+                            contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 20),
+                            enabledBorder: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(18),
+                              borderSide: BorderSide(color: Colors.white.withValues(alpha: 0.08)),
+                            ),
+                            focusedBorder: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(18),
+                              borderSide: const BorderSide(color: NgungTuTheme.aqua, width: 1.5),
+                            ),
+                          ),
+                          onChanged: (_) => setState(() {}),
+                        ),
+                        const SizedBox(height: 14),
+                        Wrap(
+                          spacing: 8,
+                          runSpacing: 8,
+                          children: [
+                            _ChipSuggestion(
+                              label: AppConfig.defaultChipId,
+                              selected: _chip.text.trim() == AppConfig.defaultChipId,
+                              onTap: () {
+                                setState(() => _chip.text = AppConfig.defaultChipId);
+                              },
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ).animate().fadeIn(delay: 80.ms).slideY(begin: 0.05),
+                  const SizedBox(height: 18),
+                  AnimatedSwitcher(
+                    duration: const Duration(milliseconds: 250),
+                    child: Text(
+                      _friendlyHint(c, chip),
+                      key: ValueKey(_friendlyHint(c, chip)),
                       style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                             fontSize: 14,
-                            color: NgungTuTheme.soft.withValues(alpha: 0.82),
+                            color: NgungTuTheme.soft.withValues(alpha: 0.78),
                             height: 1.4,
                           ),
                     ),
-                    const SizedBox(height: 26),
-                    SizedBox(
-                      height: 56,
-                      width: double.infinity,
-                      child: FilledButton(
-                        onPressed: c.connecting ? null : _connect,
-                        style: FilledButton.styleFrom(
-                          backgroundColor: NgungTuTheme.aqua,
-                          foregroundColor: NgungTuTheme.deep,
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
-                        ),
-                        child: c.connecting
-                            ? const SizedBox(
-                                width: 22,
-                                height: 22,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2.2,
-                                  color: NgungTuTheme.deep,
-                                ),
-                              )
-                            : Text(
-                                c.chipBound ? 'Kết nối lại' : 'Kết nối & xem dữ liệu',
-                                style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 16),
-                              ),
-                      ),
+                  ),
+                  if (waiting) ...[
+                    const SizedBox(height: 16),
+                    const LinearProgressIndicator(
+                      color: NgungTuTheme.aqua,
+                      backgroundColor: Color(0x332EC4B6),
+                      minHeight: 3,
+                      borderRadius: BorderRadius.all(Radius.circular(99)),
                     ),
-                    if (auth.user?.email != null) ...[
-                      const SizedBox(height: 18),
-                      Text(
-                        'Tài khoản: ${auth.user!.email}',
-                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(fontSize: 12),
-                      ),
-                    ],
                   ],
-                ),
+                  const SizedBox(height: 28),
+                  SizedBox(
+                    height: 56,
+                    width: double.infinity,
+                    child: FilledButton(
+                      onPressed: c.connecting ? null : _connect,
+                      style: FilledButton.styleFrom(
+                        backgroundColor: NgungTuTheme.aqua,
+                        foregroundColor: NgungTuTheme.deep,
+                        disabledBackgroundColor: NgungTuTheme.aqua.withValues(alpha: 0.4),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+                      ),
+                      child: c.connecting
+                          ? const SizedBox(
+                              width: 22,
+                              height: 22,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2.2,
+                                color: NgungTuTheme.deep,
+                              ),
+                            )
+                          : Text(
+                              waiting ? 'Thử lại' : 'Tiếp tục',
+                              style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 16),
+                            ),
+                    ),
+                  ),
+                  if (auth.user?.email != null) ...[
+                    const SizedBox(height: 20),
+                    Text(
+                      auth.user!.email,
+                      textAlign: TextAlign.center,
+                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                            fontSize: 12,
+                            color: NgungTuTheme.soft.withValues(alpha: 0.45),
+                          ),
+                    ),
+                  ],
+                ],
               ),
             ),
           ],
         ),
       ),
-    );
-  }
-
-  Widget _statusRow(String label, String value, bool ok) {
-    return Row(
-      children: [
-        Icon(
-          ok ? Icons.check_circle_rounded : Icons.radio_button_unchecked,
-          size: 18,
-          color: ok ? NgungTuTheme.aqua : NgungTuTheme.soft.withValues(alpha: 0.35),
-        ),
-        const SizedBox(width: 10),
-        Text(
-          label,
-          style: TextStyle(
-            color: NgungTuTheme.soft.withValues(alpha: 0.6),
-            fontSize: 13,
-          ),
-        ),
-        const Spacer(),
-        Text(
-          value,
-          style: TextStyle(
-            color: ok ? NgungTuTheme.soft : NgungTuTheme.copper,
-            fontWeight: FontWeight.w700,
-            fontSize: 13,
-          ),
-        ),
-      ],
     );
   }
 
@@ -375,6 +351,62 @@ class _ConnectPageState extends State<ConnectPage> {
       decoration: BoxDecoration(
         shape: BoxShape.circle,
         gradient: RadialGradient(colors: [color, color.withValues(alpha: 0)]),
+      ),
+    );
+  }
+}
+
+class _ChipSuggestion extends StatelessWidget {
+  const _ChipSuggestion({
+    required this.label,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(14),
+        child: Ink(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(14),
+            color: selected
+                ? NgungTuTheme.aqua.withValues(alpha: 0.18)
+                : Colors.white.withValues(alpha: 0.04),
+            border: Border.all(
+              color: selected
+                  ? NgungTuTheme.aqua.withValues(alpha: 0.55)
+                  : Colors.white.withValues(alpha: 0.1),
+            ),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                selected ? Icons.check_rounded : Icons.devices_rounded,
+                size: 16,
+                color: selected ? NgungTuTheme.aqua : NgungTuTheme.soft.withValues(alpha: 0.55),
+              ),
+              const SizedBox(width: 8),
+              Text(
+                'Máy $label',
+                style: TextStyle(
+                  color: selected ? NgungTuTheme.soft : NgungTuTheme.soft.withValues(alpha: 0.75),
+                  fontWeight: FontWeight.w700,
+                  fontSize: 13,
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }
