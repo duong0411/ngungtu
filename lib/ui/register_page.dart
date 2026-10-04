@@ -26,12 +26,48 @@ class _RegisterPageState extends State<RegisterPage> {
   }
 
   Future<void> _submit() async {
+    final name = _name.text.trim();
+    final email = _email.text.trim();
+    final pass = _pass.text;
+    if (name.isEmpty || email.isEmpty || pass.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Vui lòng điền đủ tên, email và mật khẩu'),
+          behavior: SnackBarBehavior.floating,
+          backgroundColor: NgungTuTheme.panel,
+        ),
+      );
+      return;
+    }
+    if (!email.contains('@') || !email.contains('.')) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Email chưa đúng định dạng — kiểm tra lại (ví dụ: ten@gmail.com)'),
+          behavior: SnackBarBehavior.floating,
+          backgroundColor: NgungTuTheme.panel,
+        ),
+      );
+      return;
+    }
+    if (pass.length < 6) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Mật khẩu cần ít nhất 6 ký tự'),
+          behavior: SnackBarBehavior.floating,
+          backgroundColor: NgungTuTheme.panel,
+        ),
+      );
+      return;
+    }
+
     final auth = context.read<AuthProvider>();
-    // Backend AloT vẫn nhận field phone — gửi chuỗi rỗng, không hiện trên UI
-    final ok = await auth.register(_name.text, _email.text, '', _pass.text);
+    final ok = await auth.register(name, email, '', pass);
     if (!mounted) return;
     if (ok) {
-      Navigator.of(context).pop();
+      // AuthGate tự chuyển sang trang chủ khi đã đăng nhập
+      if (Navigator.of(context).canPop()) {
+        Navigator.of(context).pop();
+      }
     } else {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(

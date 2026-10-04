@@ -61,7 +61,11 @@ class AuthProvider extends ChangeNotifier {
     error = null;
     notifyListeners();
     try {
-      user = await _auth.register(name.trim(), email.trim(), phone.trim(), password);
+      // Backend AloT bắt buộc phone — UI thi không hiện field, tự sinh số hợp lệ ẩn.
+      final cleanedPhone = phone.trim();
+      final phoneForApi =
+          cleanedPhone.isNotEmpty ? cleanedPhone : _hiddenPhoneFor(email.trim());
+      user = await _auth.register(name.trim(), email.trim(), phoneForApi, password);
       await _ensureDevice();
       busy = false;
       notifyListeners();
@@ -72,6 +76,14 @@ class AuthProvider extends ChangeNotifier {
       notifyListeners();
       return false;
     }
+  }
+
+  /// Số điện thoại kỹ thuật (không hiện UI) để thỏa validation MongoDB/AloT.
+  String _hiddenPhoneFor(String email) {
+    final digits = email.codeUnits.fold<int>(0, (a, b) => (a * 31 + b) & 0x7fffffff);
+    final tail = (DateTime.now().millisecondsSinceEpoch % 100000000).toString().padLeft(8, '0');
+    final mid = (digits % 100000000).toString().padLeft(8, '0');
+    return '09$mid$tail'.substring(0, 10);
   }
 
   Future<void> logout() async {
