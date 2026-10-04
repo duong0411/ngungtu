@@ -2,98 +2,106 @@ import 'package:flutter/material.dart';
 
 import 'theme.dart';
 
-/// Giải thích nguyên lý sò Peltier cho STEM (dễ hiểu)
 class PrinciplePage extends StatelessWidget {
   const PrinciplePage({super.key});
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: NgungTuTheme.deep,
-      appBar: AppBar(
-        backgroundColor: NgungTuTheme.panel,
-        title: const Text('Nguyên lý sò làm lạnh'),
-      ),
-      body: ListView(
-        padding: const EdgeInsets.all(20),
-        children: [
-          Text(
-            'Sò Peltier là gì?',
-            style: Theme.of(context).textTheme.headlineMedium?.copyWith(fontSize: 26),
+      body: Container(
+        decoration: const BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: [Color(0xFF062029), NgungTuTheme.deep],
           ),
-          const SizedBox(height: 8),
-          Text(
-            'Là “bơm nhiệt” bằng điện bán dẫn: khi có dòng điện chạy qua, '
-            'một mặt hút nhiệt (lạnh), mặt kia nhả nhiệt (nóng).',
-            style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                  color: NgungTuTheme.soft.withValues(alpha: 0.85),
-                  height: 1.45,
+        ),
+        child: SafeArea(
+          child: Column(
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(8, 4, 16, 0),
+                child: Row(
+                  children: [
+                    IconButton(
+                      onPressed: () => Navigator.pop(context),
+                      icon: const Icon(Icons.arrow_back_rounded, color: NgungTuTheme.soft),
+                    ),
+                    Text('Nguyên lý thu nước', style: Theme.of(context).textTheme.titleLarge),
+                  ],
                 ),
-          ),
-          const SizedBox(height: 20),
-          _step(
-            context,
-            '1',
-            'Không khí ẩm vào',
-            'Quạt hút không khí có hơi nước (độ ẩm cao) đi qua buồng ngưng tụ.',
-            NgungTuTheme.aqua,
-          ),
-          _step(
-            context,
-            '2',
-            'Mặt lạnh dưới điểm sương',
-            'ESP32 đo nhiệt độ + độ ẩm → tính điểm sương. Sò được điều khiển để mặt lạnh '
-            'thấp hơn điểm sương vài độ → hơi nước ngưng thành giọt.',
-            NgungTuTheme.ice,
-          ),
-          _step(
-            context,
-            '3',
-            'Mặt nóng phải tản nhiệt',
-            'Nhiệt hút từ mặt lạnh + nhiệt do sò sinh ra đều dồn sang mặt nóng. '
-            'Quạt + tản nhiệt phải chạy — nếu nóng quá, sò không làm lạnh được.',
-            NgungTuTheme.copper,
-          ),
-          _step(
-            context,
-            '4',
-            'Thu nước',
-            'Giọt nước chảy xuống máng → bình chứa. Có thể kết hợp cảm biến mực nước.',
-            const Color(0xFF7BDFF2),
-          ),
-          const SizedBox(height: 16),
-          Container(
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: NgungTuTheme.panel,
-              borderRadius: BorderRadius.circular(18),
-              border: Border.all(color: NgungTuTheme.aqua.withValues(alpha: 0.35)),
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text('Ví dụ số trên máy của bạn',
-                    style: Theme.of(context).textTheme.titleLarge?.copyWith(fontSize: 18)),
-                const SizedBox(height: 8),
-                Text(
-                  'Không khí 32°C, RH 70% → điểm sương ≈ 26°C.\n'
-                  'ESP đặt mục tiêu mặt lạnh ≈ 24°C (dưới điểm sương) → hơi nước ngưng.\n'
-                  'Nếu không khí quá khô (RH thấp), máy tự tắt để tiết kiệm điện.',
-                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(height: 1.5),
+              ),
+              Expanded(
+                child: ListView(
+                  padding: const EdgeInsets.fromLTRB(24, 12, 24, 32),
+                  children: [
+                    Text(
+                      'Từ hơi ẩm thành giọt nước',
+                      style: Theme.of(context).textTheme.headlineMedium?.copyWith(fontSize: 28, height: 1.15),
+                    ),
+                    const SizedBox(height: 10),
+                    Text(
+                      'Không khí quanh ta luôn chứa hơi nước. Khi làm lạnh một bề mặt xuống đủ thấp, '
+                      'hơi nước sẽ ngưng tụ thành giọt — giống kính xe bị mờ vào buổi sáng.',
+                      style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                            color: NgungTuTheme.soft.withValues(alpha: 0.82),
+                            height: 1.5,
+                          ),
+                    ),
+                    const SizedBox(height: 24),
+                    _step(
+                      context,
+                      '01',
+                      'Không khí ẩm đi vào',
+                      'Quạt đưa không khí có độ ẩm cao đi qua vùng làm lạnh.',
+                      NgungTuTheme.aqua,
+                    ),
+                    _step(
+                      context,
+                      '02',
+                      'Bề mặt lạnh dưới điểm sương',
+                      'Điểm sương là nhiệt độ mà hơi nước bắt đầu hóa lỏng. '
+                      'Máy giữ bề mặt lạnh thấp hơn mức đó một chút để tạo giọt nước.',
+                      NgungTuTheme.ice,
+                    ),
+                    _step(
+                      context,
+                      '03',
+                      'Tản nhiệt mặt nóng',
+                      'Khi một mặt lạnh đi thì mặt kia nóng lên. Quạt tản nhiệt giúp máy '
+                      'duy trì khả năng làm lạnh ổn định và tiết kiệm điện.',
+                      NgungTuTheme.copper,
+                    ),
+                    _step(
+                      context,
+                      '04',
+                      'Thu nước vào bình',
+                      'Giọt nước chảy xuống máng rồi vào bình chứa — sẵn sàng dùng cho nhu cầu phù hợp.',
+                      const Color(0xFF7BDFF2),
+                    ),
+                    const SizedBox(height: 8),
+                    Container(
+                      padding: const EdgeInsets.all(18),
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(22),
+                        color: NgungTuTheme.aqua.withValues(alpha: 0.12),
+                        border: Border.all(color: NgungTuTheme.aqua.withValues(alpha: 0.28)),
+                      ),
+                      child: Text(
+                        'Tóm lại: làm lạnh thông minh theo điểm sương → hơi nước thành nước lỏng → thu vào bình.',
+                        style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                              color: NgungTuTheme.ice,
+                              fontWeight: FontWeight.w700,
+                              height: 1.45,
+                            ),
+                      ),
+                    ),
+                  ],
                 ),
-              ],
-            ),
+              ),
+            ],
           ),
-          const SizedBox(height: 16),
-          Text(
-            'Tóm tắt một câu: điện → sò tạo mặt lạnh dưới điểm sương → hơi nước thành nước lỏng.',
-            style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                  color: NgungTuTheme.ice,
-                  fontWeight: FontWeight.w700,
-                  height: 1.4,
-                ),
-          ),
-        ],
+        ),
       ),
     );
   }
@@ -102,34 +110,37 @@ class PrinciplePage extends StatelessWidget {
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
       child: Container(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.all(18),
         decoration: BoxDecoration(
-          color: NgungTuTheme.panel.withValues(alpha: 0.85),
-          borderRadius: BorderRadius.circular(18),
-          border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+          color: Colors.white.withValues(alpha: 0.04),
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: Colors.white.withValues(alpha: 0.07)),
         ),
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Container(
-              width: 36,
-              height: 36,
+              width: 40,
+              height: 40,
               alignment: Alignment.center,
-              decoration: BoxDecoration(color: color.withValues(alpha: 0.2), shape: BoxShape.circle),
-              child: Text(n, style: TextStyle(color: color, fontWeight: FontWeight.w800)),
+              decoration: BoxDecoration(
+                color: color.withValues(alpha: 0.18),
+                borderRadius: BorderRadius.circular(14),
+              ),
+              child: Text(n, style: TextStyle(color: color, fontWeight: FontWeight.w800, fontSize: 13)),
             ),
-            const SizedBox(width: 12),
+            const SizedBox(width: 14),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(title, style: Theme.of(context).textTheme.titleLarge?.copyWith(fontSize: 17)),
-                  const SizedBox(height: 4),
+                  const SizedBox(height: 6),
                   Text(
                     body,
                     style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                           color: NgungTuTheme.soft.withValues(alpha: 0.75),
-                          height: 1.4,
+                          height: 1.45,
                         ),
                   ),
                 ],

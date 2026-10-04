@@ -14,10 +14,10 @@ class TelemetryCharts extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text('Biểu đồ nhiệt độ', style: Theme.of(context).textTheme.titleLarge),
+        Text('Diễn biến nhiệt độ', style: Theme.of(context).textTheme.titleLarge),
         const SizedBox(height: 6),
         Text(
-          'Không khí · Điểm sương · Mặt lạnh · Mục tiêu',
+          'Theo dõi không khí, điểm sương và bề mặt lạnh theo thời gian',
           style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                 color: NgungTuTheme.soft.withValues(alpha: 0.6),
                 fontSize: 12,
@@ -26,15 +26,15 @@ class TelemetryCharts extends StatelessWidget {
         const SizedBox(height: 12),
         _ChartCard(
           child: points.length < 2
-              ? const _EmptyChart(text: 'Đang thu thập dữ liệu nhiệt độ...')
+              ? const _EmptyChart(text: 'Đang ghi nhận nhiệt độ...')
               : _TempChart(points: points),
         ),
         const SizedBox(height: 20),
-        Text('Biểu đồ độ ẩm', style: Theme.of(context).textTheme.titleLarge),
+        Text('Diễn biến độ ẩm', style: Theme.of(context).textTheme.titleLarge),
         const SizedBox(height: 12),
         _ChartCard(
           child: points.length < 2
-              ? const _EmptyChart(text: 'Đang thu thập dữ liệu độ ẩm...')
+              ? const _EmptyChart(text: 'Đang ghi nhận độ ẩm...')
               : _HumidityChart(points: points),
         ),
         const SizedBox(height: 12),
@@ -241,8 +241,8 @@ class _Legend extends StatelessWidget {
       children: [
         item(NgungTuTheme.copper, 'Không khí'),
         item(NgungTuTheme.aqua, 'Điểm sương'),
-        item(NgungTuTheme.ice, 'Mặt lạnh'),
-        item(const Color(0xFFF4A261), 'Mục tiêu'),
+        item(NgungTuTheme.ice, 'Bề mặt lạnh'),
+        item(const Color(0xFFF4A261), 'Mức cần đạt'),
         item(const Color(0xFF7BDFF2), 'Độ ẩm'),
       ],
     );

@@ -56,7 +56,7 @@ class CondenserProvider extends ChangeNotifier {
 
   Future<void> start({bool force = false}) async {
     connecting = true;
-    status = 'Đang kết nối...';
+    status = 'Đang kết nối máy thu nước...';
     notifyListeners();
 
     _sub ??= _mqtt.messages.listen(_onMessage);
@@ -64,12 +64,12 @@ class CondenserProvider extends ChangeNotifier {
     final ok = await _mqtt.connect(force: force);
     connecting = false;
     if (!ok) {
-      status = 'Không kết nối được máy chủ';
+      status = 'Chưa kết nối được — kéo xuống để thử lại';
       notifyListeners();
       return;
     }
 
-    status = 'Đã kết nối — chờ dữ liệu ESP32...';
+    status = 'Đã sẵn sàng — đang chờ dữ liệu cảm biến';
     notifyListeners();
   }
 
@@ -85,9 +85,9 @@ class CondenserProvider extends ChangeNotifier {
     if (_is(topic, AppConfig.topicOnline) || topic == 'tele/789/status') {
       online = value.toString().toLowerCase() == 'online';
       if (online) {
-        status = hasTelemetry ? 'Đang vận hành' : 'ESP32 online — chờ số liệu...';
+        status = hasTelemetry ? 'Máy đang vận hành ổn định' : 'Đã sẵn sàng — chờ dữ liệu cảm biến';
       } else if (isLwtOffline) {
-        status = 'Đang chờ tín hiệu ESP32...';
+        status = 'Đang chờ tín hiệu từ máy...';
       }
     } else if (_is(topic, AppConfig.topicTemp) || topic.endsWith('_temp_livingroom/status')) {
       airTemp = _asDouble(value);

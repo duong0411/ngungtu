@@ -3,7 +3,6 @@ import 'package:flutter_animate/flutter_animate.dart';
 import 'package:provider/provider.dart';
 
 import '../core/auth_provider.dart';
-import '../core/config.dart';
 import 'register_page.dart';
 import 'theme.dart';
 
@@ -31,7 +30,11 @@ class _LoginPageState extends State<LoginPage> {
     final ok = await auth.login(_email.text, _pass.text);
     if (!ok && mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(auth.error ?? 'Đăng nhập thất bại')),
+        SnackBar(
+          content: Text(auth.error ?? 'Đăng nhập chưa thành công'),
+          behavior: SnackBarBehavior.floating,
+          backgroundColor: NgungTuTheme.panel,
+        ),
       );
     }
   }
@@ -39,6 +42,7 @@ class _LoginPageState extends State<LoginPage> {
   @override
   Widget build(BuildContext context) {
     final auth = context.watch<AuthProvider>();
+    final h = MediaQuery.sizeOf(context).height;
 
     return Scaffold(
       body: Container(
@@ -46,121 +50,156 @@ class _LoginPageState extends State<LoginPage> {
         height: double.infinity,
         decoration: const BoxDecoration(
           gradient: LinearGradient(
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-            colors: [Color(0xFF041018), NgungTuTheme.deep, Color(0xFF0B3040)],
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: [Color(0xFF062029), NgungTuTheme.deep, Color(0xFF0A1C22)],
           ),
         ),
-        child: SafeArea(
-          child: ListView(
-            padding: const EdgeInsets.fromLTRB(24, 36, 24, 24),
-            children: [
-              Text(
-                'NGƯNG TỤ',
-                style: Theme.of(context).textTheme.displayMedium?.copyWith(
-                      fontSize: 48,
-                      height: 0.95,
-                    ),
-              ).animate().fadeIn().slideY(begin: 0.1),
-              const SizedBox(height: 8),
-              Text(
-                'STEM · đăng nhập database AloT',
-                style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                      color: NgungTuTheme.ice.withValues(alpha: 0.9),
-                    ),
-              ),
-              const SizedBox(height: 6),
-              Text(
-                'Chip ID cố định: ${AppConfig.chipId}',
-                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                      color: NgungTuTheme.soft.withValues(alpha: 0.65),
-                    ),
-              ),
-              const SizedBox(height: 36),
-              _field(_email, 'Email', Icons.mail_outline_rounded),
-              const SizedBox(height: 12),
-              _field(
-                _pass,
-                'Mật khẩu',
-                Icons.lock_outline_rounded,
-                obscure: _obscure,
-                suffix: IconButton(
-                  onPressed: () => setState(() => _obscure = !_obscure),
-                  icon: Icon(
-                    _obscure ? Icons.visibility_outlined : Icons.visibility_off_outlined,
-                    color: NgungTuTheme.soft.withValues(alpha: 0.7),
+        child: Stack(
+          children: [
+            Positioned(
+              top: -80,
+              right: -60,
+              child: _blob(220, NgungTuTheme.aqua.withValues(alpha: 0.12))
+                  .animate(onPlay: (c) => c.repeat(reverse: true))
+                  .scale(begin: const Offset(0.95, 0.95), end: const Offset(1.08, 1.08), duration: 5.seconds),
+            ),
+            Positioned(
+              bottom: 80,
+              left: -40,
+              child: _blob(180, NgungTuTheme.ice.withValues(alpha: 0.08)),
+            ),
+            SafeArea(
+              child: ListView(
+                padding: EdgeInsets.fromLTRB(28, h * 0.08, 28, 28),
+                children: [
+                  Text(
+                    'NGƯNG TỤ',
+                    style: Theme.of(context).textTheme.displayMedium?.copyWith(
+                          fontSize: 52,
+                          height: 0.95,
+                          letterSpacing: -1.5,
+                        ),
+                  ).animate().fadeIn(duration: 500.ms).slideY(begin: 0.12),
+                  const SizedBox(height: 12),
+                  Text(
+                    'Biến hơi nước trong không khí\nthành nguồn nước sạch.',
+                    style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                          color: NgungTuTheme.ice.withValues(alpha: 0.88),
+                          height: 1.45,
+                          fontSize: 17,
+                        ),
+                  ).animate().fadeIn(delay: 100.ms),
+                  SizedBox(height: h * 0.07),
+                  _field(
+                    controller: _email,
+                    label: 'Email',
+                    icon: Icons.mail_outline_rounded,
+                    keyboard: TextInputType.emailAddress,
                   ),
-                ),
-              ),
-              const SizedBox(height: 22),
-              SizedBox(
-                height: 54,
-                child: ElevatedButton(
-                  onPressed: auth.busy ? null : _submit,
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: NgungTuTheme.aqua,
-                    foregroundColor: NgungTuTheme.deep,
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-                  ),
-                  child: auth.busy
-                      ? const SizedBox(
-                          width: 22,
-                          height: 22,
-                          child: CircularProgressIndicator(strokeWidth: 2, color: NgungTuTheme.deep),
-                        )
-                      : const Text('Đăng nhập', style: TextStyle(fontWeight: FontWeight.w800)),
-                ),
-              ),
-              const SizedBox(height: 14),
-              TextButton(
-                onPressed: () {
-                  Navigator.of(context).push(
-                    MaterialPageRoute(builder: (_) => const RegisterPage()),
-                  );
-                },
-                child: Text(
-                  'Chưa có tài khoản? Đăng ký',
-                  style: TextStyle(color: NgungTuTheme.ice.withValues(alpha: 0.9)),
-                ),
-              ),
-              const SizedBox(height: 24),
-              Text(
-                'Dùng chung API MongoDB: ${AppConfig.apiBaseUrl}\nSau đăng nhập app tự gắn thiết bị chip ${AppConfig.chipId}.',
-                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                      color: NgungTuTheme.soft.withValues(alpha: 0.55),
-                      fontSize: 12,
-                      height: 1.4,
+                  const SizedBox(height: 14),
+                  _field(
+                    controller: _pass,
+                    label: 'Mật khẩu',
+                    icon: Icons.lock_outline_rounded,
+                    obscure: _obscure,
+                    suffix: IconButton(
+                      onPressed: () => setState(() => _obscure = !_obscure),
+                      icon: Icon(
+                        _obscure ? Icons.visibility_outlined : Icons.visibility_off_outlined,
+                        color: NgungTuTheme.soft.withValues(alpha: 0.55),
+                      ),
                     ),
+                  ),
+                  const SizedBox(height: 28),
+                  SizedBox(
+                    height: 56,
+                    child: FilledButton(
+                      onPressed: auth.busy ? null : _submit,
+                      style: FilledButton.styleFrom(
+                        backgroundColor: NgungTuTheme.aqua,
+                        foregroundColor: NgungTuTheme.deep,
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+                      ),
+                      child: auth.busy
+                          ? const SizedBox(
+                              width: 22,
+                              height: 22,
+                              child: CircularProgressIndicator(strokeWidth: 2.2, color: NgungTuTheme.deep),
+                            )
+                          : const Text('Vào ứng dụng', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 16)),
+                    ),
+                  ),
+                  const SizedBox(height: 18),
+                  Center(
+                    child: TextButton(
+                      onPressed: () {
+                        Navigator.of(context).push(
+                          MaterialPageRoute(builder: (_) => const RegisterPage()),
+                        );
+                      },
+                      child: Text.rich(
+                        TextSpan(
+                          style: TextStyle(color: NgungTuTheme.soft.withValues(alpha: 0.75), fontSize: 14),
+                          children: const [
+                            TextSpan(text: 'Chưa có tài khoản? '),
+                            TextSpan(
+                              text: 'Tạo mới',
+                              style: TextStyle(color: NgungTuTheme.ice, fontWeight: FontWeight.w700),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
               ),
-            ],
-          ),
+            ),
+          ],
         ),
       ),
     );
   }
 
-  Widget _field(
-    TextEditingController c,
-    String hint,
-    IconData icon, {
+  Widget _blob(double size, Color color) {
+    return Container(
+      width: size,
+      height: size,
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        gradient: RadialGradient(colors: [color, color.withValues(alpha: 0)]),
+      ),
+    );
+  }
+
+  Widget _field({
+    required TextEditingController controller,
+    required String label,
+    required IconData icon,
     bool obscure = false,
     Widget? suffix,
+    TextInputType? keyboard,
   }) {
     return TextField(
-      controller: c,
+      controller: controller,
       obscureText: obscure,
-      style: const TextStyle(color: NgungTuTheme.soft),
-      keyboardType: hint == 'Email' ? TextInputType.emailAddress : TextInputType.text,
+      keyboardType: keyboard,
+      style: const TextStyle(color: NgungTuTheme.soft, fontSize: 16),
       decoration: InputDecoration(
-        hintText: hint,
-        hintStyle: TextStyle(color: NgungTuTheme.soft.withValues(alpha: 0.4)),
-        prefixIcon: Icon(icon, color: NgungTuTheme.aqua),
+        labelText: label,
+        labelStyle: TextStyle(color: NgungTuTheme.soft.withValues(alpha: 0.55)),
+        prefixIcon: Icon(icon, color: NgungTuTheme.aqua.withValues(alpha: 0.9)),
         suffixIcon: suffix,
         filled: true,
-        fillColor: NgungTuTheme.panel.withValues(alpha: 0.8),
-        border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(16),
-          borderSide: BorderSide.none,
+        fillColor: Colors.white.withValues(alpha: 0.06),
+        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 18),
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(18),
+          borderSide: BorderSide(color: Colors.white.withValues(alpha: 0.08)),
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(18),
+          borderSide: const BorderSide(color: NgungTuTheme.aqua, width: 1.4),
         ),
       ),
     );

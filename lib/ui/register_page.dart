@@ -14,27 +14,31 @@ class RegisterPage extends StatefulWidget {
 class _RegisterPageState extends State<RegisterPage> {
   final _name = TextEditingController();
   final _email = TextEditingController();
-  final _phone = TextEditingController();
   final _pass = TextEditingController();
+  bool _obscure = true;
 
   @override
   void dispose() {
     _name.dispose();
     _email.dispose();
-    _phone.dispose();
     _pass.dispose();
     super.dispose();
   }
 
   Future<void> _submit() async {
     final auth = context.read<AuthProvider>();
-    final ok = await auth.register(_name.text, _email.text, _phone.text, _pass.text);
+    // Backend AloT vẫn nhận field phone — gửi chuỗi rỗng, không hiện trên UI
+    final ok = await auth.register(_name.text, _email.text, '', _pass.text);
     if (!mounted) return;
     if (ok) {
-      Navigator.of(context).pop(); // về AuthGate → Home
+      Navigator.of(context).pop();
     } else {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(auth.error ?? 'Đăng ký thất bại')),
+        SnackBar(
+          content: Text(auth.error ?? 'Đăng ký chưa thành công'),
+          behavior: SnackBarBehavior.floating,
+          backgroundColor: NgungTuTheme.panel,
+        ),
       );
     }
   }
@@ -42,58 +46,123 @@ class _RegisterPageState extends State<RegisterPage> {
   @override
   Widget build(BuildContext context) {
     final auth = context.watch<AuthProvider>();
+
     return Scaffold(
-      backgroundColor: NgungTuTheme.deep,
-      appBar: AppBar(
-        backgroundColor: NgungTuTheme.panel,
-        title: const Text('Đăng ký tài khoản'),
-      ),
-      body: ListView(
-        padding: const EdgeInsets.all(24),
-        children: [
-          _box(_name, 'Họ tên', Icons.person_outline),
-          const SizedBox(height: 12),
-          _box(_email, 'Email', Icons.mail_outline),
-          const SizedBox(height: 12),
-          _box(_phone, 'Số điện thoại', Icons.phone_outlined),
-          const SizedBox(height: 12),
-          _box(_pass, 'Mật khẩu', Icons.lock_outline, obscure: true),
-          const SizedBox(height: 22),
-          SizedBox(
-            height: 52,
-            child: ElevatedButton(
-              onPressed: auth.busy ? null : _submit,
-              style: ElevatedButton.styleFrom(
-                backgroundColor: NgungTuTheme.aqua,
-                foregroundColor: NgungTuTheme.deep,
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-              ),
-              child: auth.busy
-                  ? const SizedBox(
-                      width: 20,
-                      height: 20,
-                      child: CircularProgressIndicator(strokeWidth: 2, color: NgungTuTheme.deep),
-                    )
-                  : const Text('Tạo tài khoản', style: TextStyle(fontWeight: FontWeight.w800)),
-            ),
+      body: Container(
+        decoration: const BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: [Color(0xFF062029), NgungTuTheme.deep],
           ),
-        ],
+        ),
+        child: SafeArea(
+          child: Column(
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(8, 4, 16, 0),
+                child: Row(
+                  children: [
+                    IconButton(
+                      onPressed: () => Navigator.pop(context),
+                      icon: const Icon(Icons.arrow_back_rounded, color: NgungTuTheme.soft),
+                    ),
+                    Text('Tạo tài khoản', style: Theme.of(context).textTheme.titleLarge),
+                  ],
+                ),
+              ),
+              Expanded(
+                child: ListView(
+                  padding: const EdgeInsets.fromLTRB(28, 20, 28, 28),
+                  children: [
+                    Text(
+                      'Chào mừng đến Ngưng Tụ',
+                      style: Theme.of(context).textTheme.headlineMedium?.copyWith(fontSize: 28),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      'Chỉ cần tên, email và mật khẩu để bắt đầu theo dõi máy thu nước.',
+                      style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                            color: NgungTuTheme.soft.withValues(alpha: 0.7),
+                            height: 1.4,
+                          ),
+                    ),
+                    const SizedBox(height: 28),
+                    _field(_name, 'Họ và tên', Icons.person_outline_rounded),
+                    const SizedBox(height: 14),
+                    _field(_email, 'Email', Icons.mail_outline_rounded, keyboard: TextInputType.emailAddress),
+                    const SizedBox(height: 14),
+                    _field(
+                      _pass,
+                      'Mật khẩu',
+                      Icons.lock_outline_rounded,
+                      obscure: _obscure,
+                      suffix: IconButton(
+                        onPressed: () => setState(() => _obscure = !_obscure),
+                        icon: Icon(
+                          _obscure ? Icons.visibility_outlined : Icons.visibility_off_outlined,
+                          color: NgungTuTheme.soft.withValues(alpha: 0.55),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 28),
+                    SizedBox(
+                      height: 56,
+                      child: FilledButton(
+                        onPressed: auth.busy ? null : _submit,
+                        style: FilledButton.styleFrom(
+                          backgroundColor: NgungTuTheme.aqua,
+                          foregroundColor: NgungTuTheme.deep,
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+                        ),
+                        child: auth.busy
+                            ? const SizedBox(
+                                width: 22,
+                                height: 22,
+                                child: CircularProgressIndicator(strokeWidth: 2.2, color: NgungTuTheme.deep),
+                              )
+                            : const Text('Hoàn tất', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 16)),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }
 
-  Widget _box(TextEditingController c, String hint, IconData icon, {bool obscure = false}) {
+  Widget _field(
+    TextEditingController c,
+    String label,
+    IconData icon, {
+    bool obscure = false,
+    Widget? suffix,
+    TextInputType? keyboard,
+  }) {
     return TextField(
       controller: c,
       obscureText: obscure,
-      style: const TextStyle(color: NgungTuTheme.soft),
+      keyboardType: keyboard,
+      style: const TextStyle(color: NgungTuTheme.soft, fontSize: 16),
       decoration: InputDecoration(
-        hintText: hint,
-        hintStyle: TextStyle(color: NgungTuTheme.soft.withValues(alpha: 0.4)),
+        labelText: label,
+        labelStyle: TextStyle(color: NgungTuTheme.soft.withValues(alpha: 0.55)),
         prefixIcon: Icon(icon, color: NgungTuTheme.aqua),
+        suffixIcon: suffix,
         filled: true,
-        fillColor: NgungTuTheme.panel.withValues(alpha: 0.85),
-        border: OutlineInputBorder(borderRadius: BorderRadius.circular(16), borderSide: BorderSide.none),
+        fillColor: Colors.white.withValues(alpha: 0.06),
+        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 18),
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(18),
+          borderSide: BorderSide(color: Colors.white.withValues(alpha: 0.08)),
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(18),
+          borderSide: const BorderSide(color: NgungTuTheme.aqua, width: 1.4),
+        ),
       ),
     );
   }
