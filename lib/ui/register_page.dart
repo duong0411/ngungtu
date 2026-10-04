@@ -49,8 +49,21 @@ class _RegisterPageState extends State<RegisterPage> {
     if (!mounted) return;
     if (!ok) {
       showAppSnack(context, message: auth.error ?? 'Đăng ký chưa thành công');
+      return;
     }
-    // Thành công: AuthGate → ConnectPage hiện banner "Đăng ký thành công".
+
+    showAppSnack(context, message: 'Đăng ký thành công', success: true);
+    await showSuccessDialog(
+      context,
+      title: 'Đăng ký thành công',
+      message: 'Tài khoản đã sẵn sàng. Tiếp theo hãy kết nối Chip ID.',
+    );
+    if (!mounted) return;
+    // Pop RegisterPage trước khi AuthGate đổi home (tránh stack rối).
+    if (Navigator.of(context).canPop()) {
+      Navigator.of(context).pop();
+    }
+    auth.confirmPendingSession(successMessage: 'Đăng ký thành công');
   }
 
   @override

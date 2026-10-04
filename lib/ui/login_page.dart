@@ -40,8 +40,17 @@ class _LoginPageState extends State<LoginPage> {
     if (!mounted) return;
     if (!ok) {
       showAppSnack(context, message: auth.error ?? 'Đăng nhập chưa thành công');
+      return;
     }
-    // Thành công: AuthGate → ConnectPage hiện banner "Đăng nhập thành công".
+
+    showAppSnack(context, message: 'Đăng nhập thành công', success: true);
+    await showSuccessDialog(
+      context,
+      title: 'Đăng nhập thành công',
+      message: 'Tiếp theo hãy nhập Chip ID để xem cảm biến.',
+    );
+    if (!mounted) return;
+    auth.confirmPendingSession(successMessage: 'Đăng nhập thành công');
   }
 
   @override

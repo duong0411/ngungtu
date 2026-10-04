@@ -10,6 +10,7 @@ class AuthProvider extends ChangeNotifier {
   final NodeService _nodes = NodeService();
 
   UserModel? user;
+  UserModel? _pendingUser;
   bool booting = true;
   bool busy = false;
   String? error;
@@ -20,6 +21,7 @@ class AuthProvider extends ChangeNotifier {
   String? successBanner;
 
   bool get isLoggedIn => user != null;
+  bool get hasPendingSession => _pendingUser != null;
 
   String? consumeSuccessBanner() {
     final msg = successBanner;
@@ -52,43 +54,60 @@ class AuthProvider extends ChangeNotifier {
     nodeName = node?['name']?.toString() ?? AppConfig.deviceName;
   }
 
+  /// Đăng nhập API nhưng chưa chuyển màn — để UI hiện thông báo thành công trước.
   Future<bool> login(String email, String password) async {
     busy = true;
     error = null;
+    _pendingUser = null;
     notifyListeners();
     try {
-      user = await _auth.login(email.trim(), password);
-      successBanner = 'Đăng nhập thành công';
+      _pendingUser = await _auth.login(email.trim(), password);
       busy = false;
       notifyListeners();
       return true;
     } catch (e) {
       error = e.toString().replaceFirst('Exception: ', '');
+      if (error == null || error!.trim().isEmpty) {
+        error = 'Đăng nhập chưa thành công';
+      }
       busy = false;
       notifyListeners();
       return false;
     }
   }
 
+  /// Đăng ký API nhưng chưa chuyển màn — để UI hiện thông báo thành công trước.
   Future<bool> register(String name, String email, String phone, String password) async {
     busy = true;
     error = null;
+    _pendingUser = null;
     notifyListeners();
     try {
       final cleanedPhone = phone.trim();
       final phoneForApi =
           cleanedPhone.isNotEmpty ? cleanedPhone : _hiddenPhoneFor(email.trim());
-      user = await _auth.register(name.trim(), email.trim(), phoneForApi, password);
-      successBanner = 'Đăng ký thành công';
+      _pendingUser = await _auth.register(name.trim(), email.trim(), phoneForApi, password);
       busy = false;
       notifyListeners();
       return true;
     } catch (e) {
       error = e.toString().replaceFirst('Exception: ', '');
+      if (error == null || error!.trim().isEmpty) {
+        error = 'Đăng ký chưa thành công';
+      }
       busy = false;
       notifyListeners();
       return false;
     }
+  }
+
+  /// Sau khi hiện dialog/snackbar thành công — mới vào app.
+  void confirmPendingSession({required String successMessage}) {
+    if (_pendingUser == null) return;
+    user = _pendingUser;
+    _pendingUser = null;
+    successBanner = successMessage;
+    notifyListeners();
   }
 
   Future<bool> resetPassword(String email, String newPassword) async {
@@ -103,6 +122,9 @@ class AuthProvider extends ChangeNotifier {
       return true;
     } catch (e) {
       error = e.toString().replaceFirst('Exception: ', '');
+      if (error == null || error!.trim().isEmpty) {
+        error = 'Không đặt lại được mật khẩu';
+      }
       busy = false;
       notifyListeners();
       return false;
@@ -134,6 +156,7 @@ class AuthProvider extends ChangeNotifier {
   Future<void> logout() async {
     await _auth.logout();
     user = null;
+    _pendingUser = null;
     nodeId = null;
     nodeName = null;
     successBanner = null;

@@ -7,6 +7,7 @@ void showAppSnack(
   required String message,
   bool success = false,
 }) {
+  if (message.trim().isEmpty) return;
   final messenger = ScaffoldMessenger.maybeOf(context);
   messenger?.hideCurrentSnackBar();
   messenger?.showSnackBar(
@@ -16,22 +17,33 @@ void showAppSnack(
           Icon(
             success ? Icons.check_circle_rounded : Icons.info_outline_rounded,
             color: success ? NgungTuTheme.aqua : NgungTuTheme.ice,
-            size: 20,
+            size: 22,
           ),
-          const SizedBox(width: 10),
+          const SizedBox(width: 12),
           Expanded(
             child: Text(
               message,
-              style: const TextStyle(fontWeight: FontWeight.w600, height: 1.3),
+              style: const TextStyle(
+                color: NgungTuTheme.soft,
+                fontWeight: FontWeight.w700,
+                fontSize: 14,
+                height: 1.35,
+              ),
             ),
           ),
         ],
       ),
       behavior: SnackBarBehavior.floating,
-      backgroundColor: NgungTuTheme.panel,
+      backgroundColor: const Color(0xFF12343E),
+      elevation: 8,
       margin: const EdgeInsets.fromLTRB(16, 0, 16, 18),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-      duration: Duration(milliseconds: success ? 2200 : 3200),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(14),
+        side: BorderSide(
+          color: (success ? NgungTuTheme.aqua : NgungTuTheme.ice).withValues(alpha: 0.35),
+        ),
+      ),
+      duration: Duration(milliseconds: success ? 2600 : 3600),
     ),
   );
 }
@@ -46,7 +58,7 @@ Future<void> showSuccessDialog(
     context: context,
     barrierDismissible: false,
     builder: (ctx) {
-      Future<void>.delayed(const Duration(milliseconds: 1400), () {
+      Future<void>.delayed(const Duration(milliseconds: 1600), () {
         if (!ctx.mounted) return;
         final nav = Navigator.of(ctx);
         if (nav.canPop()) nav.pop();
@@ -73,17 +85,22 @@ Future<void> showSuccessDialog(
               Text(
                 title,
                 textAlign: TextAlign.center,
-                style: Theme.of(ctx).textTheme.titleLarge?.copyWith(fontSize: 20),
+                style: const TextStyle(
+                  color: NgungTuTheme.soft,
+                  fontWeight: FontWeight.w800,
+                  fontSize: 20,
+                ),
               ),
               if (message != null) ...[
                 const SizedBox(height: 8),
                 Text(
                   message,
                   textAlign: TextAlign.center,
-                  style: Theme.of(ctx).textTheme.bodyMedium?.copyWith(
-                        color: NgungTuTheme.soft.withValues(alpha: 0.72),
-                        height: 1.4,
-                      ),
+                  style: TextStyle(
+                    color: NgungTuTheme.soft.withValues(alpha: 0.75),
+                    height: 1.4,
+                    fontSize: 14,
+                  ),
                 ),
               ],
             ],

@@ -55,6 +55,7 @@ class _ForgotPasswordPageState extends State<ForgotPasswordPage> {
     if (!mounted) return;
     if (ok) {
       setState(() => _done = true);
+      showAppSnack(context, message: 'Đặt lại mật khẩu thành công', success: true);
       await showSuccessDialog(
         context,
         title: 'Đặt lại mật khẩu thành công',

@@ -195,7 +195,11 @@ class _ConnectPageState extends State<ConnectPage> {
                             Expanded(
                               child: Text(
                                 _successStatus!,
-                                style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 15),
+                                style: const TextStyle(
+                                  color: NgungTuTheme.soft,
+                                  fontWeight: FontWeight.w700,
+                                  fontSize: 15,
+                                ),
                               ),
                             ),
                           ],
