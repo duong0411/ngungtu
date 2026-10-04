@@ -175,63 +175,6 @@ class MqttService {
     publish(AppConfig.cmndFan, cmd);
   }
 
-  /// Test nhanh: chờ tối đa [timeout] nhận gói chip 789.
-  Future<Map<String, dynamic>> testReceiveEsp({
-    Duration timeout = const Duration(seconds: 12),
-  }) async {
-    final connected = await connect();
-    if (!connected) {
-      return {
-        'ok': false,
-        'reason': 'Không kết nối broker: $lastError',
-        'count': 0,
-        'topics': <String>[],
-      };
-    }
-
-    final got = <String, String>{};
-    final completer = Completer<Map<String, dynamic>>();
-    late StreamSubscription sub;
-
-    sub = messages.listen((data) {
-      final topic = data['topic']?.toString() ?? '';
-      if (!topic.contains('789')) return;
-      got[topic] = data['raw']?.toString() ?? '';
-      // Đủ telemetry chính thì xong sớm
-      if (got.keys.any((t) => t.contains('temp')) &&
-          got.keys.any((t) => t.contains('humi'))) {
-        if (!completer.isCompleted) {
-          completer.complete({
-            'ok': true,
-            'reason': 'Nhận được telemetry ESP32',
-            'count': got.length,
-            'topics': got.keys.toList(),
-            'samples': Map<String, String>.from(got),
-          });
-        }
-      }
-    });
-
-    // Chờ thêm 1 chu kỳ publish ESP (~5s)
-    Future<void>.delayed(timeout, () {
-      if (!completer.isCompleted) {
-        completer.complete({
-          'ok': got.isNotEmpty,
-          'reason': got.isEmpty
-              ? 'Broker OK nhưng không thấy gói chip 789 trong ${timeout.inSeconds}s'
-              : 'Nhận được một phần gói ESP32',
-          'count': got.length,
-          'topics': got.keys.toList(),
-          'samples': Map<String, String>.from(got),
-        });
-      }
-    });
-
-    final result = await completer.future;
-    await sub.cancel();
-    return result;
-  }
-
   Future<void> _safeDisconnect() async {
     _updatesSub?.cancel();
     _updatesSub = null;

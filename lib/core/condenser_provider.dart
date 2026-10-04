@@ -7,6 +7,24 @@ import 'mqtt_service.dart';
 
 typedef TelemetrySync = Future<void> Function(Map<String, dynamic> state);
 
+class TelemetryPoint {
+  TelemetryPoint({
+    required this.at,
+    this.airTemp,
+    this.humidity,
+    this.dewPoint,
+    this.coldPlate,
+    this.setpoint,
+  });
+
+  final DateTime at;
+  final double? airTemp;
+  final double? humidity;
+  final double? dewPoint;
+  final double? coldPlate;
+  final double? setpoint;
+}
+
 class CondenserProvider extends ChangeNotifier {
   CondenserProvider({MqttService? mqtt}) : _mqtt = mqtt ?? MqttService();
 
@@ -14,15 +32,12 @@ class CondenserProvider extends ChangeNotifier {
   StreamSubscription? _sub;
   TelemetrySync? onTelemetry;
 
+  static const int maxHistory = 60;
+
   bool connecting = false;
   bool online = false;
   bool powerOn = true;
   DateTime? lastUpdate;
-  String? lastTopic;
-  String? lastPayload;
-  int rxCount = 0;
-  int rx789Count = 0;
-  final List<String> debugLog = [];
 
   double? airTemp;
   double? humidity;
@@ -33,24 +48,15 @@ class CondenserProvider extends ChangeNotifier {
   bool fanOn = false;
   String status = 'Chưa kết nối';
 
+  final List<TelemetryPoint> history = [];
+
   bool get mqttConnected => _mqtt.isConnected;
-  String get lastError => _mqtt.lastError;
-  String get mqttClientId => _mqtt.clientId;
   bool get hasTelemetry =>
       airTemp != null || humidity != null || dewPoint != null || coldPlate != null;
 
-  void _log(String line) {
-    final ts = DateTime.now();
-    final stamp =
-        '${ts.hour.toString().padLeft(2, '0')}:${ts.minute.toString().padLeft(2, '0')}:${ts.second.toString().padLeft(2, '0')}';
-    debugLog.insert(0, '[$stamp] $line');
-    if (debugLog.length > 40) debugLog.removeLast();
-  }
-
   Future<void> start({bool force = false}) async {
     connecting = true;
-    status = 'Đang kết nối MQTT...';
-    _log(force ? 'Force reconnect...' : 'Connecting broker...');
+    status = 'Đang kết nối...';
     notifyListeners();
 
     _sub ??= _mqtt.messages.listen(_onMessage);
@@ -58,53 +64,46 @@ class CondenserProvider extends ChangeNotifier {
     final ok = await _mqtt.connect(force: force);
     connecting = false;
     if (!ok) {
-      status = 'Không kết nối được MQTT';
-      _log('CONNECT FAIL: ${lastError.isEmpty ? "?" : lastError}');
+      status = 'Không kết nối được máy chủ';
       notifyListeners();
       return;
     }
 
-    status = 'MQTT OK — chờ ESP32 (chip 789)...';
-    _log('CONNECTED ${mqttClientId}');
+    status = 'Đã kết nối — chờ dữ liệu ESP32...';
     notifyListeners();
   }
 
   void _onMessage(Map<String, dynamic> data) {
     final topic = data['topic'] as String? ?? '';
     final value = data['value'];
-    final raw = data['raw']?.toString() ?? '';
-    lastTopic = topic;
-    lastPayload = raw;
-    rxCount++;
 
-    final is789 = topic.contains('789');
-    // Bỏ qua LWT offline — không tính là đã có telemetry
     final isLwtOffline = (topic == AppConfig.topicOnline || topic == 'tele/789/status') &&
         value.toString().toLowerCase() == 'offline';
 
-    if (is789) {
-      if (!isLwtOffline) rx789Count++;
-      _log('RX789 $topic → $raw');
-    }
+    var changedSensors = false;
 
     if (_is(topic, AppConfig.topicOnline) || topic == 'tele/789/status') {
       online = value.toString().toLowerCase() == 'online';
       if (online) {
-        status = hasTelemetry ? 'ESP32 online' : 'ESP32 online — chờ số liệu...';
-      } else {
-        // Retained LWT "offline" — ESP có thể vẫn đang chạy, đừng coi như chết hẳn
-        status = 'Nhận LWT offline — chờ telemetry ESP...';
+        status = hasTelemetry ? 'Đang vận hành' : 'ESP32 online — chờ số liệu...';
+      } else if (isLwtOffline) {
+        status = 'Đang chờ tín hiệu ESP32...';
       }
     } else if (_is(topic, AppConfig.topicTemp) || topic.endsWith('_temp_livingroom/status')) {
       airTemp = _asDouble(value);
+      changedSensors = true;
     } else if (_is(topic, AppConfig.topicHumi) || topic.endsWith('_humi_living_room/status')) {
       humidity = _asDouble(value);
+      changedSensors = true;
     } else if (_is(topic, AppConfig.topicDew) || topic.endsWith('_dew_point/status')) {
       dewPoint = _asDouble(value);
+      changedSensors = true;
     } else if (_is(topic, AppConfig.topicCold) || topic.endsWith('_cold_plate/status')) {
       coldPlate = _asDouble(value);
+      changedSensors = true;
     } else if (_is(topic, AppConfig.topicSetpoint) || topic.endsWith('_setpoint/status')) {
       setpoint = _asDouble(value);
+      changedSensors = true;
     } else if (_is(topic, AppConfig.topicTec) || topic.endsWith('_tec/status')) {
       tecPercent = _asDouble(value);
     } else if (_is(topic, AppConfig.topicFan) || topic.endsWith('_fan_livingroom/status')) {
@@ -115,12 +114,15 @@ class CondenserProvider extends ChangeNotifier {
         (topic.endsWith('_status/status') && topic.contains('789_status'))) {
       status = value?.toString() ?? status;
     } else {
-      if (kDebugMode) print('MQTT ignore: $topic');
-      notifyListeners();
       return;
     }
 
     lastUpdate = DateTime.now();
+
+    if (changedSensors && hasTelemetry) {
+      _pushHistory();
+    }
+
     notifyListeners();
 
     if (hasTelemetry && onTelemetry != null) {
@@ -139,32 +141,44 @@ class CondenserProvider extends ChangeNotifier {
     }
   }
 
-  bool _is(String topic, String expected) => topic == expected;
-
-  Future<Map<String, dynamic>> testMqttReceive() async {
-    _log('START MQTT TEST (wait ESP 789)...');
-    notifyListeners();
-    final result = await _mqtt.testReceiveEsp();
-    _log(result['ok'] == true
-        ? 'TEST OK count=${result['count']}'
-        : 'TEST FAIL: ${result['reason']}');
-    // Đồng bộ lại listener provider
-    _sub ??= _mqtt.messages.listen(_onMessage);
-    notifyListeners();
-    return result;
+  void _pushHistory() {
+    // Tránh spam điểm khi nhiều topic đến cùng lúc — lọc ~3s/điểm
+    if (history.isNotEmpty &&
+        DateTime.now().difference(history.last.at) < const Duration(seconds: 3)) {
+      history[history.length - 1] = TelemetryPoint(
+        at: DateTime.now(),
+        airTemp: airTemp,
+        humidity: humidity,
+        dewPoint: dewPoint,
+        coldPlate: coldPlate,
+        setpoint: setpoint,
+      );
+      return;
+    }
+    history.add(TelemetryPoint(
+      at: DateTime.now(),
+      airTemp: airTemp,
+      humidity: humidity,
+      dewPoint: dewPoint,
+      coldPlate: coldPlate,
+      setpoint: setpoint,
+    ));
+    while (history.length > maxHistory) {
+      history.removeAt(0);
+    }
   }
+
+  bool _is(String topic, String expected) => topic == expected;
 
   void togglePower() {
     if (!_mqtt.isConnected) {
-      status = 'MQTT chưa kết nối — nhấn refresh';
-      _log('TX blocked: not connected');
+      status = 'Chưa kết nối — kéo xuống để thử lại';
       notifyListeners();
       return;
     }
     final next = !powerOn;
     powerOn = next;
-    status = next ? 'Đã gửi lệnh BẬT...' : 'Đã gửi lệnh TẮT...';
-    _log('TX power=${next ? "ON" : "OFF"}');
+    status = next ? 'Đã bật hệ thống' : 'Đã tạm dừng hệ thống';
     notifyListeners();
     _mqtt.setPower(next);
   }
