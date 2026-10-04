@@ -98,9 +98,9 @@ class _TempChart extends StatelessWidget {
     final cold = _spots((p) => p.coldPlate);
     final set = _spots((p) => p.setpoint);
 
-    final allY = [...air, ...dew, ...cold, ...set].map((e) => e.y);
-    final minY = (allY.isEmpty ? 0 : allY.reduce((a, b) => a < b ? a : b)) - 2;
-    final maxY = (allY.isEmpty ? 40 : allY.reduce((a, b) => a > b ? a : b)) + 2;
+    final allY = [...air, ...dew, ...cold, ...set].map((e) => e.y).toList();
+    final minY = (allY.isEmpty ? 0.0 : allY.reduce((a, b) => a < b ? a : b)) - 2.0;
+    final maxY = (allY.isEmpty ? 40.0 : allY.reduce((a, b) => a > b ? a : b)) + 2.0;
 
     return LineChart(
       LineChartData(
