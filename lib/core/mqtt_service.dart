@@ -10,55 +10,71 @@ import 'config.dart';
 class MqttService {
   MqttServerClient? _client;
   StreamSubscription<List<MqttReceivedMessage<MqttMessage?>>>? _updatesSub;
+  bool _connecting = false;
   bool _isConnected = false;
-  bool get isConnected => _isConnected;
+  bool get isConnected =>
+      _isConnected &&
+      _client?.connectionStatus?.state == MqttConnectionState.connected;
 
   String lastError = '';
+  String clientId = '';
 
   final _messageController = StreamController<Map<String, dynamic>>.broadcast();
   Stream<Map<String, dynamic>> get messages => _messageController.stream;
 
-  Future<bool> connect({String brokerUrl = AppConfig.brokerUrl}) async {
-    await disconnect();
+  Future<bool> connect({
+    String brokerUrl = AppConfig.brokerUrl,
+    bool force = false,
+  }) async {
+    if (_connecting) return false;
+    if (!force && isConnected) {
+      _subscribeAll();
+      return true;
+    }
+
+    _connecting = true;
     lastError = '';
+    await _safeDisconnect();
 
     final uri = Uri.parse(brokerUrl);
     final scheme = uri.scheme.isNotEmpty ? uri.scheme : 'wss';
     final host = uri.host.isNotEmpty ? uri.host : 'mqtt.duynguyen.io.vn';
     final port = uri.port != 0 ? uri.port : 443;
     final path = uri.path.isNotEmpty ? uri.path : '/mqtt';
-    final clientId = 'ngungtu_${DateTime.now().millisecondsSinceEpoch}';
+    clientId = 'ngungtu_${DateTime.now().millisecondsSinceEpoch}';
 
-    // QUAN TRỌNG: với WSS chỉ truyền URL wss://..., KHÔNG set secure=true
-    // (secure chỉ dùng cho MQTT TCP/TLS — set nhầm sẽ fail DNS)
+    // Giống app SmartHome đang chạy thật — KHÔNG set secure=true với WSS
     final wsUrl = '$scheme://$host$path';
-    if (kDebugMode) print('MQTT: connecting $wsUrl port=$port');
+    if (kDebugMode) print('MQTT: connecting $wsUrl');
 
-    _client = MqttServerClient.withPort(wsUrl, clientId, port);
-    _client!.useWebSocket = true;
-    _client!.websocketProtocols = MqttClientConstants.protocolsSingleDefault;
-    _client!.logging(on: kDebugMode);
-    _client!.keepAlivePeriod = 30;
-    _client!.connectTimeoutPeriod = 12000;
-    _client!.autoReconnect = true;
-    _client!.resubscribeOnAutoReconnect = true;
+    final client = MqttServerClient.withPort(wsUrl, clientId, port);
+    _client = client;
+    client.useWebSocket = true;
+    client.websocketProtocols = MqttClientConstants.protocolsSingleDefault;
+    client.logging(on: false);
+    client.setProtocolV311();
+    client.keepAlivePeriod = 60;
+    client.connectTimeoutPeriod = 15000;
+    client.autoReconnect = true;
+    client.resubscribeOnAutoReconnect = true;
 
-    _client!.onConnected = () {
+    client.onConnected = () {
       _isConnected = true;
       _subscribeAll();
-      if (kDebugMode) print('MQTT: connected');
+      if (kDebugMode) print('MQTT: connected $clientId');
     };
-    _client!.onDisconnected = () {
+    client.onDisconnected = () {
       _isConnected = false;
       if (kDebugMode) print('MQTT: disconnected');
     };
-    _client!.onAutoReconnected = () {
+    client.onAutoReconnected = () {
       _isConnected = true;
+      _listen();
       _subscribeAll();
-      if (kDebugMode) print('MQTT: reconnected');
+      if (kDebugMode) print('MQTT: auto-reconnected');
     };
 
-    _client!.connectionMessage = MqttConnectMessage()
+    client.connectionMessage = MqttConnectMessage()
         .withClientIdentifier(clientId)
         .startClean()
         .withWillTopic('tele/ngungtu_app/status')
@@ -66,31 +82,35 @@ class MqttService {
         .withWillQos(MqttQos.atLeastOnce);
 
     try {
-      await _client!.connect().timeout(const Duration(seconds: 15));
+      await client.connect().timeout(const Duration(seconds: 18));
     } catch (e) {
       lastError = e.toString();
-      if (kDebugMode) print('MQTT connect error: $e');
       _isConnected = false;
-      try {
-        _client?.disconnect();
-      } catch (_) {}
+      _connecting = false;
+      await _safeDisconnect();
       return false;
     }
 
-    if (_client!.connectionStatus?.state == MqttConnectionState.connected) {
-      _isConnected = true;
-      _listen();
-      _subscribeAll();
-      return true;
+    final ok = client.connectionStatus?.state == MqttConnectionState.connected;
+    _isConnected = ok;
+    _connecting = false;
+
+    if (!ok) {
+      lastError = client.connectionStatus?.toString() ?? 'connect failed';
+      await _safeDisconnect();
+      return false;
     }
 
-    lastError = _client!.connectionStatus?.toString() ?? 'unknown';
-    _isConnected = false;
-    return false;
+    _listen();
+    _subscribeAll();
+    // Báo app online (không retain)
+    publish('tele/ngungtu_app/status', 'online');
+    return true;
   }
 
   void _subscribeAll() {
-    if (_client == null || !_isConnected) return;
+    final client = _client;
+    if (client == null || !isConnected) return;
 
     final topics = <String>{
       'tele/+/status',
@@ -99,8 +119,7 @@ class MqttService {
 
     for (final topic in topics) {
       try {
-        _client!.subscribe(topic, MqttQos.atLeastOnce);
-        if (kDebugMode) print('MQTT SUB: $topic');
+        client.subscribe(topic, MqttQos.atLeastOnce);
       } catch (e) {
         if (kDebugMode) print('Subscribe error $topic: $e');
       }
@@ -114,7 +133,6 @@ class MqttService {
 
     _updatesSub = updates.listen((events) {
       if (events.isEmpty) return;
-
       for (final event in events) {
         final rec = event.payload as MqttPublishMessage;
         final payload =
@@ -133,22 +151,22 @@ class MqttService {
           value = payload.trim();
         }
 
-        if (kDebugMode) print('MQTT RX: [$topic] $payload');
-
-        _messageController.add({
-          'topic': topic,
-          'value': value,
-          'raw': payload,
-        });
+        if (kDebugMode) print('MQTT RX [$topic] $payload');
+        if (!_messageController.isClosed) {
+          _messageController.add({
+            'topic': topic,
+            'value': value,
+            'raw': payload,
+          });
+        }
       }
     });
   }
 
   void publish(String topic, String message) {
-    if (!_isConnected || _client == null) return;
+    if (!isConnected || _client == null) return;
     final builder = MqttClientPayloadBuilder()..addString(message);
     _client!.publishMessage(topic, MqttQos.atLeastOnce, builder.payload!);
-    if (kDebugMode) print('MQTT TX [$topic] $message');
   }
 
   void setPower(bool on) {
@@ -157,18 +175,82 @@ class MqttService {
     publish(AppConfig.cmndFan, cmd);
   }
 
-  Future<void> disconnect() async {
+  /// Test nhanh: chờ tối đa [timeout] nhận gói chip 789.
+  Future<Map<String, dynamic>> testReceiveEsp({
+    Duration timeout = const Duration(seconds: 12),
+  }) async {
+    final connected = await connect();
+    if (!connected) {
+      return {
+        'ok': false,
+        'reason': 'Không kết nối broker: $lastError',
+        'count': 0,
+        'topics': <String>[],
+      };
+    }
+
+    final got = <String, String>{};
+    final completer = Completer<Map<String, dynamic>>();
+    late StreamSubscription sub;
+
+    sub = messages.listen((data) {
+      final topic = data['topic']?.toString() ?? '';
+      if (!topic.contains('789')) return;
+      got[topic] = data['raw']?.toString() ?? '';
+      // Đủ telemetry chính thì xong sớm
+      if (got.keys.any((t) => t.contains('temp')) &&
+          got.keys.any((t) => t.contains('humi'))) {
+        if (!completer.isCompleted) {
+          completer.complete({
+            'ok': true,
+            'reason': 'Nhận được telemetry ESP32',
+            'count': got.length,
+            'topics': got.keys.toList(),
+            'samples': Map<String, String>.from(got),
+          });
+        }
+      }
+    });
+
+    // Chờ thêm 1 chu kỳ publish ESP (~5s)
+    Future<void>.delayed(timeout, () {
+      if (!completer.isCompleted) {
+        completer.complete({
+          'ok': got.isNotEmpty,
+          'reason': got.isEmpty
+              ? 'Broker OK nhưng không thấy gói chip 789 trong ${timeout.inSeconds}s'
+              : 'Nhận được một phần gói ESP32',
+          'count': got.length,
+          'topics': got.keys.toList(),
+          'samples': Map<String, String>.from(got),
+        });
+      }
+    });
+
+    final result = await completer.future;
+    await sub.cancel();
+    return result;
+  }
+
+  Future<void> _safeDisconnect() async {
     _updatesSub?.cancel();
     _updatesSub = null;
     _isConnected = false;
-    try {
-      _client?.disconnect();
-    } catch (_) {}
+    final client = _client;
     _client = null;
+    if (client == null) return;
+    try {
+      client.autoReconnect = false;
+      client.disconnect();
+    } catch (_) {}
   }
 
+  Future<void> disconnect() => _safeDisconnect();
+
   Future<void> dispose() async {
-    await disconnect();
-    await _messageController.close();
+    await _safeDisconnect();
+    if (!_messageController.isClosed) {
+      await _messageController.close();
+    }
   }
 }

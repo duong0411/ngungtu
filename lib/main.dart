@@ -17,13 +17,26 @@ void main() {
   runApp(const NgungTuApp());
 }
 
-class NgungTuApp extends StatelessWidget {
+class NgungTuApp extends StatefulWidget {
   const NgungTuApp({super.key});
 
   @override
+  State<NgungTuApp> createState() => _NgungTuAppState();
+}
+
+class _NgungTuAppState extends State<NgungTuApp> {
+  late final CondenserProvider _provider = CondenserProvider()..start();
+
+  @override
+  void dispose() {
+    _provider.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
-    return ChangeNotifierProvider(
-      create: (_) => CondenserProvider()..start(),
+    return ChangeNotifierProvider.value(
+      value: _provider,
       child: MaterialApp(
         title: 'Ngưng Tụ STEM',
         debugShowCheckedModeBanner: false,

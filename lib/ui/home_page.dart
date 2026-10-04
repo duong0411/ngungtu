@@ -3,6 +3,7 @@ import 'package:flutter_animate/flutter_animate.dart';
 import 'package:provider/provider.dart';
 
 import '../core/condenser_provider.dart';
+import 'mqtt_test_page.dart';
 import 'theme.dart';
 
 class HomePage extends StatelessWidget {
@@ -158,6 +159,15 @@ class _Header extends StatelessWidget {
           ),
         ),
         const Spacer(),
+        IconButton(
+          tooltip: 'MQTT Test',
+          onPressed: () {
+            Navigator.of(context).push(
+              MaterialPageRoute(builder: (_) => const MqttTestPage()),
+            );
+          },
+          icon: const Icon(Icons.science_rounded, color: NgungTuTheme.ice),
+        ),
         IconButton(
           onPressed: c.connecting ? null : c.reconnect,
           icon: c.connecting

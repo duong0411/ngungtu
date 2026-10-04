@@ -32,6 +32,7 @@ class CondenserProvider extends ChangeNotifier {
 
   bool get mqttConnected => _mqtt.isConnected;
   String get lastError => _mqtt.lastError;
+  String get mqttClientId => _mqtt.clientId;
   bool get hasTelemetry =>
       airTemp != null || humidity != null || dewPoint != null || coldPlate != null;
 
@@ -40,19 +41,18 @@ class CondenserProvider extends ChangeNotifier {
     final stamp =
         '${ts.hour.toString().padLeft(2, '0')}:${ts.minute.toString().padLeft(2, '0')}:${ts.second.toString().padLeft(2, '0')}';
     debugLog.insert(0, '[$stamp] $line');
-    if (debugLog.length > 30) debugLog.removeLast();
+    if (debugLog.length > 40) debugLog.removeLast();
   }
 
-  Future<void> start() async {
+  Future<void> start({bool force = false}) async {
     connecting = true;
     status = 'Đang kết nối MQTT...';
-    _log('Connecting broker...');
+    _log(force ? 'Force reconnect...' : 'Connecting broker...');
     notifyListeners();
 
-    _sub?.cancel();
-    _sub = _mqtt.messages.listen(_onMessage);
+    _sub ??= _mqtt.messages.listen(_onMessage);
 
-    final ok = await _mqtt.connect();
+    final ok = await _mqtt.connect(force: force);
     connecting = false;
     if (!ok) {
       status = 'Không kết nối được MQTT';
@@ -61,8 +61,8 @@ class CondenserProvider extends ChangeNotifier {
       return;
     }
 
-    status = 'MQTT OK — chờ ESP32 publish (chip 789)...';
-    _log('CONNECTED + subscribed tele/+/status');
+    status = 'MQTT OK — chờ ESP32 (chip 789)...';
+    _log('CONNECTED ${mqttClientId}');
     notifyListeners();
   }
 
@@ -73,18 +73,18 @@ class CondenserProvider extends ChangeNotifier {
     lastTopic = topic;
     lastPayload = raw;
     rxCount++;
-    _log('RX $topic → $raw');
 
     final is789 = topic.contains('789');
-    if (is789) rx789Count++;
+    if (is789) {
+      rx789Count++;
+      _log('RX789 $topic → $raw');
+    }
 
     if (_is(topic, AppConfig.topicOnline) || topic == 'tele/789/status') {
       online = value.toString().toLowerCase() == 'online';
-      if (online && !hasTelemetry) {
-        status = 'ESP32 online — chờ telemetry...';
-      } else if (online) {
-        status = 'ESP32 online';
-      }
+      status = online
+          ? (hasTelemetry ? 'ESP32 online' : 'ESP32 online — chờ số liệu...')
+          : status;
     } else if (_is(topic, AppConfig.topicTemp) || topic.endsWith('_temp_livingroom/status')) {
       airTemp = _asDouble(value);
     } else if (_is(topic, AppConfig.topicHumi) || topic.endsWith('_humi_living_room/status')) {
@@ -105,7 +105,7 @@ class CondenserProvider extends ChangeNotifier {
         (topic.endsWith('_status/status') && topic.contains('789_status'))) {
       status = value?.toString() ?? status;
     } else {
-      if (kDebugMode) print('MQTT ignore topic: $topic');
+      if (kDebugMode) print('MQTT ignore: $topic');
       notifyListeners();
       return;
     }
@@ -115,6 +115,19 @@ class CondenserProvider extends ChangeNotifier {
   }
 
   bool _is(String topic, String expected) => topic == expected;
+
+  Future<Map<String, dynamic>> testMqttReceive() async {
+    _log('START MQTT TEST (wait ESP 789)...');
+    notifyListeners();
+    final result = await _mqtt.testReceiveEsp();
+    _log(result['ok'] == true
+        ? 'TEST OK count=${result['count']}'
+        : 'TEST FAIL: ${result['reason']}');
+    // Đồng bộ lại listener provider
+    _sub ??= _mqtt.messages.listen(_onMessage);
+    notifyListeners();
+    return result;
+  }
 
   void togglePower() {
     if (!_mqtt.isConnected) {
@@ -131,7 +144,7 @@ class CondenserProvider extends ChangeNotifier {
     _mqtt.setPower(next);
   }
 
-  Future<void> reconnect() => start();
+  Future<void> reconnect() => start(force: true);
 
   double? _asDouble(dynamic v) {
     if (v == null) return null;
