@@ -5,11 +5,14 @@ import 'package:flutter/foundation.dart';
 import 'config.dart';
 import 'mqtt_service.dart';
 
+typedef TelemetrySync = Future<void> Function(Map<String, dynamic> state);
+
 class CondenserProvider extends ChangeNotifier {
   CondenserProvider({MqttService? mqtt}) : _mqtt = mqtt ?? MqttService();
 
   final MqttService _mqtt;
   StreamSubscription? _sub;
+  TelemetrySync? onTelemetry;
 
   bool connecting = false;
   bool online = false;
@@ -119,6 +122,21 @@ class CondenserProvider extends ChangeNotifier {
 
     lastUpdate = DateTime.now();
     notifyListeners();
+
+    if (hasTelemetry && onTelemetry != null) {
+      onTelemetry!({
+        'temperature': airTemp,
+        'humidity': humidity,
+        'dewPoint': dewPoint,
+        'coldPlate': coldPlate,
+        'setpoint': setpoint,
+        'tecPercent': tecPercent,
+        'fan': fanOn,
+        'power': powerOn,
+        'status': status,
+        'chipId': AppConfig.chipId,
+      });
+    }
   }
 
   bool _is(String topic, String expected) => topic == expected;

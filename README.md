@@ -2,9 +2,11 @@
 
 App Flutter riêng cho dự án **máy ngưng tụ hơi nước ESP32** (STEM).
 
+- Đăng nhập / đăng ký database giống AloT (`https://duynguyen.io.vn/api` → MongoDB)
+- Sau login tự gắn thiết bị **chip ID `789`**
 - MQTT realtime qua `wss://mqtt.duynguyen.io.vn/mqtt`
-- Chip ID mặc định: `789` (khớp firmware `NgungTu_ESP32.ino`)
 - Hiển thị: nhiệt độ KK, độ ẩm, điểm sương, mặt lạnh, mục tiêu, % sò, trạng thái
+- Có trang giải thích nguyên lý sò Peltier
 - Nút Bật/Tắt hệ thống qua MQTT
 
 ## Chạy local

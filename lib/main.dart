@@ -2,8 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
+import 'core/auth_provider.dart';
 import 'core/condenser_provider.dart';
 import 'ui/home_page.dart';
+import 'ui/login_page.dart';
 import 'ui/theme.dart';
 
 void main() {
@@ -25,24 +27,76 @@ class NgungTuApp extends StatefulWidget {
 }
 
 class _NgungTuAppState extends State<NgungTuApp> {
-  late final CondenserProvider _provider = CondenserProvider()..start();
+  late final AuthProvider _auth = AuthProvider()..bootstrap();
+  late final CondenserProvider _condenser = CondenserProvider();
+
+  @override
+  void initState() {
+    super.initState();
+    _condenser.onTelemetry = (state) => _auth.syncTelemetry(state);
+  }
 
   @override
   void dispose() {
-    _provider.dispose();
+    _condenser.dispose();
+    _auth.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    return ChangeNotifierProvider.value(
-      value: _provider,
+    return MultiProvider(
+      providers: [
+        ChangeNotifierProvider.value(value: _auth),
+        ChangeNotifierProvider.value(value: _condenser),
+      ],
       child: MaterialApp(
         title: 'Ngưng Tụ STEM',
         debugShowCheckedModeBanner: false,
         theme: NgungTuTheme.dark(),
-        home: const HomePage(),
+        home: const _AuthGate(),
       ),
     );
+  }
+}
+
+class _AuthGate extends StatefulWidget {
+  const _AuthGate();
+
+  @override
+  State<_AuthGate> createState() => _AuthGateState();
+}
+
+class _AuthGateState extends State<_AuthGate> {
+  bool _mqttStarted = false;
+  String? _startedForUser;
+
+  @override
+  Widget build(BuildContext context) {
+    final auth = context.watch<AuthProvider>();
+
+    if (auth.booting) {
+      return const Scaffold(
+        backgroundColor: Color(0xFF071820),
+        body: Center(child: CircularProgressIndicator(color: Color(0xFF2EC4B6))),
+      );
+    }
+
+    if (!auth.isLoggedIn) {
+      _mqttStarted = false;
+      _startedForUser = null;
+      return const LoginPage();
+    }
+
+    final uid = auth.user?.id;
+    if (!_mqttStarted || _startedForUser != uid) {
+      _mqttStarted = true;
+      _startedForUser = uid;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        context.read<CondenserProvider>().start();
+      });
+    }
+
+    return const HomePage();
   }
 }

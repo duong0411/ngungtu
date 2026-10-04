@@ -1,7 +1,9 @@
-/// Cấu hình MQTT khớp firmware ESP32 `NgungTu_ESP32.ino`
+/// Cấu hình MQTT + API (cùng backend AloT / MongoDB)
 class AppConfig {
+  static const String apiBaseUrl = 'https://duynguyen.io.vn/api';
   static const String brokerUrl = 'wss://mqtt.duynguyen.io.vn/mqtt';
   static const String chipId = '789';
+  static const String deviceName = 'Máy Ngưng Tụ STEM';
 
   static const String topicOnline = 'tele/$chipId/status';
   static const String topicTemp = 'tele/${chipId}_temp_livingroom/status';

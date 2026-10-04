@@ -2,8 +2,11 @@ import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:provider/provider.dart';
 
+import '../core/auth_provider.dart';
 import '../core/condenser_provider.dart';
+import '../core/config.dart';
 import 'mqtt_test_page.dart';
+import 'principle_page.dart';
 import 'theme.dart';
 
 class HomePage extends StatelessWidget {
@@ -56,7 +59,7 @@ class HomePage extends StatelessWidget {
                   padding: const EdgeInsets.fromLTRB(22, 10, 22, 32),
                   children: [
                     _Header(c: c),
-                    SizedBox(height: size.height * 0.04),
+                    SizedBox(height: size.height * 0.03),
                     Text(
                       'NGƯNG TỤ',
                       style: Theme.of(context).textTheme.displayMedium?.copyWith(
@@ -70,7 +73,7 @@ class HomePage extends StatelessWidget {
                         .slideY(begin: 0.12, duration: 500.ms),
                     const SizedBox(height: 10),
                     Text(
-                      'STEM · máy ngưng tụ hơi nước ESP32',
+                      'STEM · chip ${AppConfig.chipId} · database AloT',
                       style: Theme.of(context).textTheme.bodyLarge?.copyWith(
                             color: NgungTuTheme.ice.withValues(alpha: 0.85),
                             letterSpacing: 0.3,
@@ -83,7 +86,9 @@ class HomePage extends StatelessWidget {
                             color: NgungTuTheme.soft.withValues(alpha: 0.7),
                           ),
                     ),
-                    SizedBox(height: size.height * 0.04),
+                    const SizedBox(height: 14),
+                    _PrincipleTeaser(),
+                    SizedBox(height: size.height * 0.03),
                     _PowerButton(c: c)
                         .animate()
                         .fadeIn(delay: 180.ms)
@@ -116,69 +121,141 @@ class _Header extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final auth = context.watch<AuthProvider>();
     final mqttOk = c.mqttConnected;
-    final deviceOk = c.online;
+    final deviceOk = c.online || c.hasTelemetry;
 
-    return Row(
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-          decoration: BoxDecoration(
-            border: Border.all(color: NgungTuTheme.aqua.withValues(alpha: 0.35)),
-            borderRadius: BorderRadius.circular(999),
-            color: NgungTuTheme.panel.withValues(alpha: 0.55),
-          ),
-          child: Row(
-            children: [
-              _Dot(color: mqttOk ? NgungTuTheme.aqua : NgungTuTheme.copper),
-              const SizedBox(width: 8),
-              Text(
-                mqttOk ? 'MQTT OK' : 'MQTT OFF',
-                style: Theme.of(context).textTheme.labelLarge?.copyWith(fontSize: 12),
+        Row(
+          children: [
+            Expanded(
+              child: Text(
+                auth.user?.name.isNotEmpty == true
+                    ? 'Xin chào, ${auth.user!.name}'
+                    : 'Xin chào',
+                style: Theme.of(context).textTheme.titleLarge?.copyWith(fontSize: 16),
+                overflow: TextOverflow.ellipsis,
               ),
-            ],
-          ),
+            ),
+            IconButton(
+              tooltip: 'Nguyên lý sò',
+              onPressed: () {
+                Navigator.of(context).push(
+                  MaterialPageRoute(builder: (_) => const PrinciplePage()),
+                );
+              },
+              icon: const Icon(Icons.menu_book_rounded, color: NgungTuTheme.ice),
+            ),
+            IconButton(
+              tooltip: 'MQTT Test',
+              onPressed: () {
+                Navigator.of(context).push(
+                  MaterialPageRoute(builder: (_) => const MqttTestPage()),
+                );
+              },
+              icon: const Icon(Icons.science_rounded, color: NgungTuTheme.ice),
+            ),
+            IconButton(
+              tooltip: 'Đăng xuất',
+              onPressed: () async {
+                await context.read<AuthProvider>().logout();
+              },
+              icon: const Icon(Icons.logout_rounded, color: NgungTuTheme.soft),
+            ),
+          ],
         ),
-        const SizedBox(width: 8),
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-          decoration: BoxDecoration(
-            border: Border.all(color: Colors.white.withValues(alpha: 0.12)),
-            borderRadius: BorderRadius.circular(999),
-            color: NgungTuTheme.panel.withValues(alpha: 0.35),
-          ),
-          child: Row(
-            children: [
-              _Dot(color: deviceOk ? NgungTuTheme.ice : Colors.white38),
-              const SizedBox(width: 8),
-              Text(
-                deviceOk ? 'ESP32 ONLINE' : 'ESP32...',
-                style: Theme.of(context).textTheme.labelLarge?.copyWith(fontSize: 12),
-              ),
-            ],
-          ),
-        ),
-        const Spacer(),
-        IconButton(
-          tooltip: 'MQTT Test',
-          onPressed: () {
-            Navigator.of(context).push(
-              MaterialPageRoute(builder: (_) => const MqttTestPage()),
-            );
-          },
-          icon: const Icon(Icons.science_rounded, color: NgungTuTheme.ice),
-        ),
-        IconButton(
-          onPressed: c.connecting ? null : c.reconnect,
-          icon: c.connecting
-              ? const SizedBox(
-                  width: 18,
-                  height: 18,
-                  child: CircularProgressIndicator(strokeWidth: 2, color: NgungTuTheme.aqua),
-                )
-              : const Icon(Icons.refresh_rounded, color: NgungTuTheme.soft),
+        const SizedBox(height: 8),
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: [
+            _chip(context, mqttOk ? 'MQTT OK' : 'MQTT OFF', mqttOk ? NgungTuTheme.aqua : NgungTuTheme.copper),
+            _chip(context, deviceOk ? 'ESP ${AppConfig.chipId}' : 'Chip ${AppConfig.chipId}', deviceOk ? NgungTuTheme.ice : Colors.white38),
+            _chip(context, auth.nodeName ?? AppConfig.deviceName, NgungTuTheme.soft.withValues(alpha: 0.7)),
+            IconButton(
+              visualDensity: VisualDensity.compact,
+              onPressed: c.connecting ? null : c.reconnect,
+              icon: c.connecting
+                  ? const SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(strokeWidth: 2, color: NgungTuTheme.aqua),
+                    )
+                  : const Icon(Icons.refresh_rounded, color: NgungTuTheme.soft, size: 20),
+            ),
+          ],
         ),
       ],
+    );
+  }
+
+  Widget _chip(BuildContext context, String text, Color color) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+      decoration: BoxDecoration(
+        border: Border.all(color: color.withValues(alpha: 0.35)),
+        borderRadius: BorderRadius.circular(999),
+        color: NgungTuTheme.panel.withValues(alpha: 0.45),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          _Dot(color: color),
+          const SizedBox(width: 6),
+          Text(text, style: Theme.of(context).textTheme.labelLarge?.copyWith(fontSize: 11)),
+        ],
+      ),
+    );
+  }
+}
+
+class _PrincipleTeaser extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(18),
+        onTap: () {
+          Navigator.of(context).push(
+            MaterialPageRoute(builder: (_) => const PrinciplePage()),
+          );
+        },
+        child: Ink(
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(18),
+            border: Border.all(color: NgungTuTheme.aqua.withValues(alpha: 0.3)),
+            color: NgungTuTheme.mist.withValues(alpha: 0.25),
+          ),
+          child: Row(
+            children: [
+              const Icon(Icons.ac_unit_rounded, color: NgungTuTheme.ice),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('Sò làm lạnh thế nào?',
+                        style: Theme.of(context).textTheme.titleLarge?.copyWith(fontSize: 16)),
+                    const SizedBox(height: 2),
+                    Text(
+                      'Điện → mặt lạnh dưới điểm sương → hơi nước thành giọt. Chạm để xem.',
+                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                            color: NgungTuTheme.soft.withValues(alpha: 0.7),
+                            fontSize: 12,
+                          ),
+                    ),
+                  ],
+                ),
+              ),
+              const Icon(Icons.chevron_right_rounded, color: NgungTuTheme.soft),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }
