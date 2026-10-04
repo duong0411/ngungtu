@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 
 import 'auth_service.dart';
+import 'config.dart';
 import 'models/user_model.dart';
 import 'node_service.dart';
 
@@ -15,15 +16,28 @@ class AuthProvider extends ChangeNotifier {
   String? nodeId;
   String? nodeName;
 
+  /// Banner trạng thái thành công (login/register) — màn sau hiển thị 1 lần.
+  String? successBanner;
+
   bool get isLoggedIn => user != null;
+
+  String? consumeSuccessBanner() {
+    final msg = successBanner;
+    successBanner = null;
+    return msg;
+  }
 
   Future<void> bootstrap() async {
     booting = true;
     notifyListeners();
     try {
+      final savedChip = await _auth.loadSavedChipId();
+      if (savedChip != null && savedChip.isNotEmpty) {
+        AppConfig.setChipId(savedChip);
+      }
       user = await _auth.loadSavedUser();
-      if (user != null) {
-        await _ensureDevice();
+      if (user != null && AppConfig.chipId.isNotEmpty) {
+        await _ensureDevice(AppConfig.chipId);
       }
     } catch (e) {
       error = e.toString();
@@ -32,10 +46,10 @@ class AuthProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<void> _ensureDevice() async {
-    final node = await _nodes.ensureCondenserNode();
+  Future<void> _ensureDevice(String chipId) async {
+    final node = await _nodes.ensureCondenserNode(chipId: chipId);
     nodeId = node?['_id']?.toString() ?? node?['id']?.toString();
-    nodeName = node?['name']?.toString() ?? 'Máy Ngưng Tụ STEM';
+    nodeName = node?['name']?.toString() ?? AppConfig.deviceName;
   }
 
   Future<bool> login(String email, String password) async {
@@ -44,7 +58,7 @@ class AuthProvider extends ChangeNotifier {
     notifyListeners();
     try {
       user = await _auth.login(email.trim(), password);
-      await _ensureDevice();
+      successBanner = 'Đăng nhập thành công';
       busy = false;
       notifyListeners();
       return true;
@@ -61,12 +75,11 @@ class AuthProvider extends ChangeNotifier {
     error = null;
     notifyListeners();
     try {
-      // Backend AloT bắt buộc phone — UI thi không hiện field, tự sinh số hợp lệ ẩn.
       final cleanedPhone = phone.trim();
       final phoneForApi =
           cleanedPhone.isNotEmpty ? cleanedPhone : _hiddenPhoneFor(email.trim());
       user = await _auth.register(name.trim(), email.trim(), phoneForApi, password);
-      await _ensureDevice();
+      successBanner = 'Đăng ký thành công';
       busy = false;
       notifyListeners();
       return true;
@@ -76,6 +89,38 @@ class AuthProvider extends ChangeNotifier {
       notifyListeners();
       return false;
     }
+  }
+
+  Future<bool> resetPassword(String email, String newPassword) async {
+    busy = true;
+    error = null;
+    notifyListeners();
+    try {
+      final msg = await _auth.resetPassword(email, newPassword);
+      successBanner = msg.isNotEmpty ? msg : 'Đặt lại mật khẩu thành công';
+      busy = false;
+      notifyListeners();
+      return true;
+    } catch (e) {
+      error = e.toString().replaceFirst('Exception: ', '');
+      busy = false;
+      notifyListeners();
+      return false;
+    }
+  }
+
+  Future<void> bindChip(String chipId) async {
+    AppConfig.setChipId(chipId);
+    await _auth.saveChipId(AppConfig.chipId);
+    await _ensureDevice(AppConfig.chipId);
+    notifyListeners();
+  }
+
+  Future<void> clearBoundChip() async {
+    await _auth.clearChipId();
+    nodeId = null;
+    nodeName = null;
+    notifyListeners();
   }
 
   /// Số điện thoại kỹ thuật (không hiện UI) để thỏa validation MongoDB/AloT.
@@ -91,6 +136,7 @@ class AuthProvider extends ChangeNotifier {
     user = null;
     nodeId = null;
     nodeName = null;
+    successBanner = null;
     notifyListeners();
   }
 

@@ -2,33 +2,41 @@
 class AppConfig {
   static const String apiBaseUrl = 'https://duynguyen.io.vn/api';
   static const String brokerUrl = 'wss://mqtt.duynguyen.io.vn/mqtt';
-  static const String chipId = '789';
+  static const String defaultChipId = '789';
   static const String deviceName = 'Máy Ngưng Tụ STEM';
 
-  static const String topicOnline = 'tele/$chipId/status';
-  static const String topicTemp = 'tele/${chipId}_temp_livingroom/status';
-  static const String topicHumi = 'tele/${chipId}_humi_living_room/status';
-  static const String topicFan = 'tele/${chipId}_fan_livingroom/status';
-  static const String topicDew = 'tele/${chipId}_dew_point/status';
-  static const String topicCold = 'tele/${chipId}_cold_plate/status';
-  static const String topicSetpoint = 'tele/${chipId}_setpoint/status';
-  static const String topicTec = 'tele/${chipId}_tec/status';
-  static const String topicStatus = 'tele/${chipId}_status/status';
-  static const String topicPower = 'tele/${chipId}_power/status';
+  /// Chip đang gắn — người dùng nhập ở màn Connect (mặc định 789).
+  static String chipId = defaultChipId;
 
-  static const String cmndPower = 'cmnd/${chipId}_power/POWER';
-  static const String cmndFan = 'cmnd/${chipId}_fan_livingroom/POWER';
+  static void setChipId(String id) {
+    final cleaned = id.trim();
+    chipId = cleaned.isEmpty ? defaultChipId : cleaned;
+  }
 
-  static const List<String> subscribeTopics = [
-    topicOnline,
-    topicTemp,
-    topicHumi,
-    topicFan,
-    topicDew,
-    topicCold,
-    topicSetpoint,
-    topicTec,
-    topicStatus,
-    topicPower,
-  ];
+  static String get topicOnline => 'tele/$chipId/status';
+  static String get topicTemp => 'tele/${chipId}_temp_livingroom/status';
+  static String get topicHumi => 'tele/${chipId}_humi_living_room/status';
+  static String get topicFan => 'tele/${chipId}_fan_livingroom/status';
+  static String get topicDew => 'tele/${chipId}_dew_point/status';
+  static String get topicCold => 'tele/${chipId}_cold_plate/status';
+  static String get topicSetpoint => 'tele/${chipId}_setpoint/status';
+  static String get topicTec => 'tele/${chipId}_tec/status';
+  static String get topicStatus => 'tele/${chipId}_status/status';
+  static String get topicPower => 'tele/${chipId}_power/status';
+
+  static String get cmndPower => 'cmnd/${chipId}_power/POWER';
+  static String get cmndFan => 'cmnd/${chipId}_fan_livingroom/POWER';
+
+  static List<String> get subscribeTopics => [
+        topicOnline,
+        topicTemp,
+        topicHumi,
+        topicFan,
+        topicDew,
+        topicCold,
+        topicSetpoint,
+        topicTec,
+        topicStatus,
+        topicPower,
+      ];
 }

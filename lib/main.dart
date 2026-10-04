@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 
 import 'core/auth_provider.dart';
 import 'core/condenser_provider.dart';
+import 'ui/connect_page.dart';
 import 'ui/home_page.dart';
 import 'ui/login_page.dart';
 import 'ui/theme.dart';
@@ -68,9 +69,6 @@ class _AuthGate extends StatefulWidget {
 }
 
 class _AuthGateState extends State<_AuthGate> {
-  bool _mqttStarted = false;
-  String? _startedForUser;
-
   @override
   Widget build(BuildContext context) {
     final auth = context.watch<AuthProvider>();
@@ -83,18 +81,14 @@ class _AuthGateState extends State<_AuthGate> {
     }
 
     if (!auth.isLoggedIn) {
-      _mqttStarted = false;
-      _startedForUser = null;
       return const LoginPage();
     }
 
-    final uid = auth.user?.id;
-    if (!_mqttStarted || _startedForUser != uid) {
-      _mqttStarted = true;
-      _startedForUser = uid;
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        context.read<CondenserProvider>().start();
-      });
+    final condenser = context.watch<CondenserProvider>();
+
+    // Bắt buộc nhập Chip ID + xác thực trước khi xem cảm biến / biểu đồ
+    if (!condenser.canEnterSystem) {
+      return const ConnectPage();
     }
 
     return const HomePage();

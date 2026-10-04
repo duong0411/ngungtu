@@ -40,6 +40,11 @@ class CondenserProvider extends ChangeNotifier {
   bool powerOn = true;
   DateTime? lastUpdate;
 
+  /// Đã nhận tín hiệu đúng chipId người dùng nhập.
+  bool chipVerified = false;
+  String linkedChipId = '';
+  bool chipBound = false;
+
   double? airTemp;
   double? humidity;
   double? dewPoint;
@@ -56,9 +61,24 @@ class CondenserProvider extends ChangeNotifier {
   bool get hasTelemetry =>
       airTemp != null || humidity != null || dewPoint != null || coldPlate != null;
 
+  /// Vào dashboard khi MQTT OK + đúng chip đã xác thực + có online/tele.
+  bool get canEnterSystem =>
+      chipBound &&
+      mqttConnected &&
+      chipVerified &&
+      linkedChipId == AppConfig.chipId &&
+      (online || hasTelemetry);
+
   Future<void> start({bool force = false}) async {
     connecting = true;
-    status = 'Đang kết nối máy thu nước...';
+    if (force) {
+      chipVerified = false;
+      linkedChipId = '';
+      online = false;
+    }
+    status = chipBound
+        ? 'Đang kết nối chip ${AppConfig.chipId}...'
+        : 'Đang kết nối máy thu nước...';
     notifyListeners();
 
     _sub ??= _mqtt.messages.listen(_onMessage);
@@ -71,44 +91,123 @@ class CondenserProvider extends ChangeNotifier {
       return;
     }
 
-    status = 'Đã sẵn sàng — đang chờ dữ liệu cảm biến';
+    status = chipBound
+        ? 'MQTT OK — chờ chip ${AppConfig.chipId} phản hồi...'
+        : 'Đã sẵn sàng — đang chờ dữ liệu cảm biến';
     notifyListeners();
+  }
+
+  /// Gắn chipId người dùng nhập rồi kết nối / xác thực.
+  Future<bool> connectWithChip(String rawChipId) async {
+    final id = rawChipId.trim();
+    if (id.isEmpty) {
+      status = 'Vui lòng nhập Chip ID';
+      notifyListeners();
+      return false;
+    }
+
+    AppConfig.setChipId(id);
+    chipBound = true;
+    chipVerified = false;
+    linkedChipId = '';
+    online = false;
+    airTemp = null;
+    humidity = null;
+    dewPoint = null;
+    coldPlate = null;
+    setpoint = null;
+    tecPercent = null;
+    fanPercent = null;
+    fanOn = false;
+    history.clear();
+    lastUpdate = null;
+    status = 'Đang kết nối chip ${AppConfig.chipId}...';
+    notifyListeners();
+
+    await start(force: true);
+    return mqttConnected;
+  }
+
+  void disconnectChip() {
+    chipBound = false;
+    chipVerified = false;
+    linkedChipId = '';
+    online = false;
+    airTemp = null;
+    humidity = null;
+    dewPoint = null;
+    coldPlate = null;
+    setpoint = null;
+    tecPercent = null;
+    fanPercent = null;
+    fanOn = false;
+    history.clear();
+    lastUpdate = null;
+    status = 'Đã ngắt thiết bị — nhập Chip ID để kết nối lại';
+    notifyListeners();
+  }
+
+  bool _isOurChipTopic(String topic) {
+    final id = AppConfig.chipId;
+    return topic == 'tele/$id/status' ||
+        topic.startsWith('tele/${id}_') ||
+        topic.startsWith('cmnd/${id}_');
+  }
+
+  void _markChipVerified() {
+    chipVerified = true;
+    linkedChipId = AppConfig.chipId;
   }
 
   void _onMessage(Map<String, dynamic> data) {
     final topic = data['topic'] as String? ?? '';
     final value = data['value'];
 
-    final isLwtOffline = (topic == AppConfig.topicOnline || topic == 'tele/789/status') &&
+    if (!chipBound) return;
+
+    if (!_isOurChipTopic(topic)) {
+      if (kDebugMode) print('Bỏ qua topic chip khác: $topic');
+      return;
+    }
+
+    final isLwtOffline = topic == AppConfig.topicOnline &&
         value.toString().toLowerCase() == 'offline';
 
     var changedSensors = false;
 
-    if (_is(topic, AppConfig.topicOnline) || topic == 'tele/789/status') {
+    if (_is(topic, AppConfig.topicOnline)) {
       online = value.toString().toLowerCase() == 'online';
       if (online) {
-        status = hasTelemetry ? 'Máy đang vận hành ổn định' : 'Đã sẵn sàng — chờ dữ liệu cảm biến';
+        _markChipVerified();
+        status = hasTelemetry ? 'Máy đang vận hành ổn định' : 'Chip ${AppConfig.chipId} online';
       } else if (isLwtOffline) {
-        status = 'Đang chờ tín hiệu từ máy...';
+        online = false;
+        status = 'Chip ${AppConfig.chipId} offline — chờ kết nối lại';
       }
-    } else if (_is(topic, AppConfig.topicTemp) || topic.endsWith('_temp_livingroom/status')) {
+    } else if (_is(topic, AppConfig.topicTemp)) {
       airTemp = _asDouble(value);
       changedSensors = true;
-    } else if (_is(topic, AppConfig.topicHumi) || topic.endsWith('_humi_living_room/status')) {
+      _markChipVerified();
+    } else if (_is(topic, AppConfig.topicHumi)) {
       humidity = _asDouble(value);
       changedSensors = true;
-    } else if (_is(topic, AppConfig.topicDew) || topic.endsWith('_dew_point/status')) {
+      _markChipVerified();
+    } else if (_is(topic, AppConfig.topicDew)) {
       dewPoint = _asDouble(value);
       changedSensors = true;
-    } else if (_is(topic, AppConfig.topicCold) || topic.endsWith('_cold_plate/status')) {
+      _markChipVerified();
+    } else if (_is(topic, AppConfig.topicCold)) {
       coldPlate = _asDouble(value);
       changedSensors = true;
-    } else if (_is(topic, AppConfig.topicSetpoint) || topic.endsWith('_setpoint/status')) {
+      _markChipVerified();
+    } else if (_is(topic, AppConfig.topicSetpoint)) {
       setpoint = _asDouble(value);
       changedSensors = true;
-    } else if (_is(topic, AppConfig.topicTec) || topic.endsWith('_tec/status')) {
+      _markChipVerified();
+    } else if (_is(topic, AppConfig.topicTec)) {
       tecPercent = _asDouble(value);
-    } else if (_is(topic, AppConfig.topicFan) || topic.endsWith('_fan_livingroom/status')) {
+      _markChipVerified();
+    } else if (_is(topic, AppConfig.topicFan)) {
       final pct = _asDouble(value);
       if (pct != null) {
         fanPercent = pct.clamp(0, 100);
@@ -117,11 +216,13 @@ class CondenserProvider extends ChangeNotifier {
         fanOn = _asOn(value);
         fanPercent = fanOn ? 100 : 0;
       }
-    } else if (_is(topic, AppConfig.topicPower) || topic.endsWith('_power/status')) {
+      _markChipVerified();
+    } else if (_is(topic, AppConfig.topicPower)) {
       powerOn = _asOn(value);
-    } else if (_is(topic, AppConfig.topicStatus) ||
-        (topic.endsWith('_status/status') && topic.contains('789_status'))) {
+      _markChipVerified();
+    } else if (_is(topic, AppConfig.topicStatus)) {
       status = value?.toString() ?? status;
+      _markChipVerified();
     } else {
       return;
     }
@@ -163,14 +264,12 @@ class CondenserProvider extends ChangeNotifier {
   void _pushHistory() {
     final now = DateTime.now();
 
-    // Điểm đầu: seed 2 điểm gần nhau để biểu đồ vẽ ngay (không chờ chu kỳ MQTT tiếp)
     if (history.isEmpty) {
       history.add(_snapshot(now.subtract(const Duration(seconds: 1))));
       history.add(_snapshot(now));
       return;
     }
 
-    // Topic MQTT tới dồn cục — cập nhật điểm cuối trong ~0.8s, sau đó mới thêm điểm mới
     if (now.difference(history.last.at) < _historyInterval) {
       history[history.length - 1] = _snapshot(now);
       return;

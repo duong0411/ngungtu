@@ -6,51 +6,66 @@ import '../core/auth_provider.dart';
 import 'theme.dart';
 import 'widgets/feedback.dart';
 
-class RegisterPage extends StatefulWidget {
-  const RegisterPage({super.key});
+class ForgotPasswordPage extends StatefulWidget {
+  const ForgotPasswordPage({super.key});
 
   @override
-  State<RegisterPage> createState() => _RegisterPageState();
+  State<ForgotPasswordPage> createState() => _ForgotPasswordPageState();
 }
 
-class _RegisterPageState extends State<RegisterPage> {
-  final _name = TextEditingController();
+class _ForgotPasswordPageState extends State<ForgotPasswordPage> {
   final _email = TextEditingController();
   final _pass = TextEditingController();
+  final _confirm = TextEditingController();
   bool _obscure = true;
+  bool _done = false;
 
   @override
   void dispose() {
-    _name.dispose();
     _email.dispose();
     _pass.dispose();
+    _confirm.dispose();
     super.dispose();
   }
 
   Future<void> _submit() async {
-    final name = _name.text.trim();
     final email = _email.text.trim();
     final pass = _pass.text;
-    if (name.isEmpty || email.isEmpty || pass.isEmpty) {
-      showAppSnack(context, message: 'Vui lòng điền đủ tên, email và mật khẩu');
+    final confirm = _confirm.text;
+
+    if (email.isEmpty || pass.isEmpty || confirm.isEmpty) {
+      showAppSnack(context, message: 'Vui lòng điền đủ email và mật khẩu mới');
       return;
     }
     if (!email.contains('@') || !email.contains('.')) {
-      showAppSnack(context, message: 'Email chưa đúng định dạng — ví dụ: ten@gmail.com');
+      showAppSnack(context, message: 'Email chưa đúng định dạng');
       return;
     }
     if (pass.length < 6) {
-      showAppSnack(context, message: 'Mật khẩu cần ít nhất 6 ký tự');
+      showAppSnack(context, message: 'Mật khẩu mới cần ít nhất 6 ký tự');
+      return;
+    }
+    if (pass != confirm) {
+      showAppSnack(context, message: 'Mật khẩu xác nhận chưa khớp');
       return;
     }
 
     final auth = context.read<AuthProvider>();
-    final ok = await auth.register(name, email, '', pass);
+    final ok = await auth.resetPassword(email, pass);
     if (!mounted) return;
-    if (!ok) {
-      showAppSnack(context, message: auth.error ?? 'Đăng ký chưa thành công');
+    if (ok) {
+      setState(() => _done = true);
+      await showSuccessDialog(
+        context,
+        title: 'Đặt lại mật khẩu thành công',
+        message: 'Bạn có thể đăng nhập bằng mật khẩu mới.',
+      );
+      if (mounted && Navigator.of(context).canPop()) {
+        Navigator.of(context).pop(true);
+      }
+    } else {
+      showAppSnack(context, message: auth.error ?? 'Không đặt lại được mật khẩu');
     }
-    // Thành công: AuthGate → ConnectPage hiện banner "Đăng ký thành công".
   }
 
   @override
@@ -59,6 +74,8 @@ class _RegisterPageState extends State<RegisterPage> {
 
     return Scaffold(
       body: Container(
+        width: double.infinity,
+        height: double.infinity,
         decoration: const BoxDecoration(
           gradient: LinearGradient(
             begin: Alignment.topCenter,
@@ -77,7 +94,7 @@ class _RegisterPageState extends State<RegisterPage> {
                       onPressed: () => Navigator.pop(context),
                       icon: const Icon(Icons.arrow_back_rounded, color: NgungTuTheme.soft),
                     ),
-                    Text('Tạo tài khoản', style: Theme.of(context).textTheme.titleLarge),
+                    Text('Quên mật khẩu', style: Theme.of(context).textTheme.titleLarge),
                   ],
                 ),
               ),
@@ -86,31 +103,51 @@ class _RegisterPageState extends State<RegisterPage> {
                   padding: const EdgeInsets.fromLTRB(28, 16, 28, 28),
                   children: [
                     Text(
-                      'Chào mừng đến Ngưng Tụ',
+                      'Đặt mật khẩu mới',
                       style: Theme.of(context).textTheme.headlineMedium?.copyWith(fontSize: 28),
                     ).animate().fadeIn(duration: 350.ms),
                     const SizedBox(height: 8),
                     Text(
-                      'Chỉ cần tên, email và mật khẩu để bắt đầu theo dõi máy thu nước.',
+                      'Nhập email đã đăng ký và mật khẩu mới để khôi phục truy cập.',
                       style: Theme.of(context).textTheme.bodyLarge?.copyWith(
                             color: NgungTuTheme.soft.withValues(alpha: 0.7),
                             height: 1.4,
                           ),
                     ),
                     const SizedBox(height: 28),
-                    _field(_name, 'Họ và tên', Icons.person_outline_rounded),
-                    const SizedBox(height: 14),
+                    if (_done)
+                      Container(
+                        padding: const EdgeInsets.all(16),
+                        margin: const EdgeInsets.only(bottom: 20),
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(18),
+                          color: NgungTuTheme.aqua.withValues(alpha: 0.12),
+                          border: Border.all(color: NgungTuTheme.aqua.withValues(alpha: 0.35)),
+                        ),
+                        child: const Row(
+                          children: [
+                            Icon(Icons.check_circle_rounded, color: NgungTuTheme.aqua),
+                            SizedBox(width: 12),
+                            Expanded(
+                              child: Text(
+                                'Thành công — mật khẩu đã được cập nhật.',
+                                style: TextStyle(fontWeight: FontWeight.w700),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
                     _field(
-                      _email,
-                      'Email',
-                      Icons.mail_outline_rounded,
+                      controller: _email,
+                      label: 'Email',
+                      icon: Icons.mail_outline_rounded,
                       keyboard: TextInputType.emailAddress,
                     ),
                     const SizedBox(height: 14),
                     _field(
-                      _pass,
-                      'Mật khẩu',
-                      Icons.lock_outline_rounded,
+                      controller: _pass,
+                      label: 'Mật khẩu mới',
+                      icon: Icons.lock_outline_rounded,
                       obscure: _obscure,
                       suffix: IconButton(
                         onPressed: () => setState(() => _obscure = !_obscure),
@@ -120,14 +157,22 @@ class _RegisterPageState extends State<RegisterPage> {
                         ),
                       ),
                     ),
+                    const SizedBox(height: 14),
+                    _field(
+                      controller: _confirm,
+                      label: 'Xác nhận mật khẩu mới',
+                      icon: Icons.verified_user_outlined,
+                      obscure: _obscure,
+                    ),
                     const SizedBox(height: 28),
                     SizedBox(
                       height: 56,
                       child: FilledButton(
-                        onPressed: auth.busy ? null : _submit,
+                        onPressed: auth.busy || _done ? null : _submit,
                         style: FilledButton.styleFrom(
                           backgroundColor: NgungTuTheme.aqua,
                           foregroundColor: NgungTuTheme.deep,
+                          disabledBackgroundColor: NgungTuTheme.aqua.withValues(alpha: 0.35),
                           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
                         ),
                         child: auth.busy
@@ -139,9 +184,9 @@ class _RegisterPageState extends State<RegisterPage> {
                                   color: NgungTuTheme.deep,
                                 ),
                               )
-                            : const Text(
-                                'Đăng ký',
-                                style: TextStyle(fontWeight: FontWeight.w800, fontSize: 16),
+                            : Text(
+                                _done ? 'Đã cập nhật' : 'Đặt lại mật khẩu',
+                                style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 16),
                               ),
                       ),
                     ),
@@ -155,23 +200,23 @@ class _RegisterPageState extends State<RegisterPage> {
     );
   }
 
-  Widget _field(
-    TextEditingController c,
-    String label,
-    IconData icon, {
+  Widget _field({
+    required TextEditingController controller,
+    required String label,
+    required IconData icon,
     bool obscure = false,
     Widget? suffix,
     TextInputType? keyboard,
   }) {
     return TextField(
-      controller: c,
+      controller: controller,
       obscureText: obscure,
       keyboardType: keyboard,
       style: const TextStyle(color: NgungTuTheme.soft, fontSize: 16),
       decoration: InputDecoration(
         labelText: label,
         labelStyle: TextStyle(color: NgungTuTheme.soft.withValues(alpha: 0.55)),
-        prefixIcon: Icon(icon, color: NgungTuTheme.aqua),
+        prefixIcon: Icon(icon, color: NgungTuTheme.aqua.withValues(alpha: 0.9)),
         suffixIcon: suffix,
         filled: true,
         fillColor: Colors.white.withValues(alpha: 0.06),

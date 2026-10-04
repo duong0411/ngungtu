@@ -32,13 +32,15 @@ class NodeService {
     return [];
   }
 
-  /// Đảm bảo user có thiết bị chip 789 trong MongoDB (giống AloT nodes).
-  Future<Map<String, dynamic>?> ensureCondenserNode() async {
+  /// Đảm bảo user có thiết bị chip trong MongoDB (giống AloT nodes).
+  Future<Map<String, dynamic>?> ensureCondenserNode({String? chipId}) async {
     final token = await _token();
     if (token == null) return null;
+    final id = (chipId ?? AppConfig.chipId).trim();
+    if (id.isEmpty) return null;
 
     final nodes = await getNodes();
-    final existing = nodes.where((n) => '${n['chipId']}' == AppConfig.chipId);
+    final existing = nodes.where((n) => '${n['chipId']}' == id);
     if (existing.isNotEmpty) return existing.first;
 
     final res = await http
@@ -49,8 +51,8 @@ class NodeService {
             'Content-Type': 'application/json',
           },
           body: jsonEncode({
-            'name': 'Máy Ngưng Tụ STEM',
-            'chipId': AppConfig.chipId,
+            'name': AppConfig.deviceName,
+            'chipId': id,
             'templateType': 'kitchen_living',
             'state': {},
           }),
@@ -62,9 +64,8 @@ class NodeService {
       return Map<String, dynamic>.from(data['data']['node']);
     }
 
-    // Có thể đã tồn tại trên server — lấy lại list
     final again = await getNodes();
-    final found = again.where((n) => '${n['chipId']}' == AppConfig.chipId);
+    final found = again.where((n) => '${n['chipId']}' == id);
     return found.isNotEmpty ? found.first : null;
   }
 

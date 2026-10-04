@@ -4,12 +4,34 @@ import 'package:provider/provider.dart';
 
 import '../core/auth_provider.dart';
 import '../core/condenser_provider.dart';
+import '../core/config.dart';
 import 'charts.dart';
 import 'principle_page.dart';
 import 'theme.dart';
+import 'widgets/feedback.dart';
 
-class HomePage extends StatelessWidget {
+class HomePage extends StatefulWidget {
   const HomePage({super.key});
+
+  @override
+  State<HomePage> createState() => _HomePageState();
+}
+
+class _HomePageState extends State<HomePage> {
+  bool _bannerShown = false;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || _bannerShown) return;
+      final msg = context.read<AuthProvider>().consumeSuccessBanner();
+      if (msg != null) {
+        _bannerShown = true;
+        showAppSnack(context, message: msg, success: true);
+      }
+    });
+  }
 
   String _friendlyStatus(CondenserProvider c) {
     if (!c.mqttConnected) return 'Đang kết nối máy thu nước...';
@@ -23,7 +45,6 @@ class HomePage extends StatelessWidget {
     return 'Máy đang tạm nghỉ';
   }
 
-  /// Trạng thái ngắn — khớp dòng cuối trên OLED (không hiện WiFi/MQTT).
   String _shortMachineStatus(CondenserProvider c) {
     if (!c.mqttConnected) return 'Chờ máy';
     final s = c.status.trim();
@@ -36,6 +57,16 @@ class HomePage extends StatelessWidget {
     if (lower.contains('bat tu') || lower.contains('bật')) return 'Đang chạy';
     if (s.length <= 16) return s;
     return '${s.substring(0, 15)}…';
+  }
+
+  Future<void> _changeDevice() async {
+    final condenser = context.read<CondenserProvider>();
+    final auth = context.read<AuthProvider>();
+    condenser.disconnectChip();
+    await auth.clearBoundChip();
+    if (mounted) {
+      showAppSnack(context, message: 'Nhập Chip ID khác để kết nối lại');
+    }
   }
 
   @override
@@ -63,7 +94,11 @@ class HomePage extends StatelessWidget {
               right: -size.width * 0.15,
               child: _orb(size.width * 0.65, NgungTuTheme.aqua.withValues(alpha: 0.13))
                   .animate(onPlay: (a) => a.repeat(reverse: true))
-                  .scale(begin: const Offset(0.94, 0.94), end: const Offset(1.05, 1.05), duration: 6.seconds),
+                  .scale(
+                    begin: const Offset(0.94, 0.94),
+                    end: const Offset(1.05, 1.05),
+                    duration: 6.seconds,
+                  ),
             ),
             SafeArea(
               child: RefreshIndicator(
@@ -97,7 +132,9 @@ class HomePage extends StatelessWidget {
                                   const SizedBox(width: 8),
                                   Flexible(
                                     child: Text(
-                                      live ? 'Đang hoạt động' : 'Đang kết nối',
+                                      live
+                                          ? 'Chip ${AppConfig.chipId} · đang hoạt động'
+                                          : 'Chip ${AppConfig.chipId} · đang kết nối',
                                       style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                                             fontSize: 12,
                                             color: NgungTuTheme.soft.withValues(alpha: 0.75),
@@ -110,6 +147,11 @@ class HomePage extends StatelessWidget {
                           ),
                         ),
                         IconButton(
+                          tooltip: 'Đổi Chip ID',
+                          onPressed: _changeDevice,
+                          icon: const Icon(Icons.link_off_rounded, color: NgungTuTheme.ice),
+                        ),
+                        IconButton(
                           tooltip: 'Tìm hiểu nguyên lý',
                           onPressed: () {
                             Navigator.of(context).push(
@@ -120,12 +162,18 @@ class HomePage extends StatelessWidget {
                         ),
                         IconButton(
                           tooltip: 'Đăng xuất',
-                          onPressed: () => context.read<AuthProvider>().logout(),
+                          onPressed: () async {
+                            final condenser = context.read<CondenserProvider>();
+                            final auth = context.read<AuthProvider>();
+                            condenser.disconnectChip();
+                            await auth.clearBoundChip();
+                            await auth.logout();
+                          },
                           icon: Icon(Icons.logout_rounded, color: NgungTuTheme.soft.withValues(alpha: 0.8)),
                         ),
                       ],
                     ),
-                    SizedBox(height: size.height * 0.03),
+                    SizedBox(height: size.height * 0.025),
                     Text(
                       'NGƯNG TỤ',
                       style: Theme.of(context).textTheme.displayMedium?.copyWith(
@@ -148,28 +196,65 @@ class HomePage extends StatelessWidget {
                             color: NgungTuTheme.soft.withValues(alpha: 0.72),
                           ),
                     ),
-                    const SizedBox(height: 20),
+                    const SizedBox(height: 18),
+                    _ChipBadge(chipId: AppConfig.chipId, live: live),
+                    const SizedBox(height: 16),
                     _HeroInsight(c: c),
                     const SizedBox(height: 22),
                     Text('Như trên màn hình máy', style: Theme.of(context).textTheme.titleLarge),
                     const SizedBox(height: 12),
                     _MetricRow(
-                      left: _Metric('Không khí', _fmt(c.airTemp, '°C'), Icons.thermostat_rounded, NgungTuTheme.copper),
-                      right: _Metric('Độ ẩm', _fmt(c.humidity, '%', d: 0), Icons.water_drop_rounded, NgungTuTheme.aqua),
+                      left: _Metric(
+                        'Không khí',
+                        _fmt(c.airTemp, '°C'),
+                        Icons.thermostat_rounded,
+                        NgungTuTheme.copper,
+                      ),
+                      right: _Metric(
+                        'Độ ẩm',
+                        _fmt(c.humidity, '%', d: 0),
+                        Icons.water_drop_rounded,
+                        NgungTuTheme.aqua,
+                      ),
                     ),
                     const SizedBox(height: 12),
                     _MetricRow(
-                      left: _Metric('Điểm sương', _fmt(c.dewPoint, '°C'), Icons.water_rounded, NgungTuTheme.ice),
-                      right: _Metric('Bề mặt lạnh', _fmt(c.coldPlate, '°C'), Icons.ac_unit_rounded, const Color(0xFF7BDFF2)),
+                      left: _Metric(
+                        'Điểm sương',
+                        _fmt(c.dewPoint, '°C'),
+                        Icons.water_rounded,
+                        NgungTuTheme.ice,
+                      ),
+                      right: _Metric(
+                        'Bề mặt lạnh',
+                        _fmt(c.coldPlate, '°C'),
+                        Icons.ac_unit_rounded,
+                        const Color(0xFF7BDFF2),
+                      ),
                     ),
                     const SizedBox(height: 12),
                     _MetricRow(
-                      left: _Metric('Mức cần đạt', _fmt(c.setpoint, '°C'), Icons.flag_rounded, const Color(0xFFF4A261)),
-                      right: _Metric('Làm lạnh', _fmt(c.tecPercent, '%', d: 0), Icons.bolt_rounded, NgungTuTheme.ice),
+                      left: _Metric(
+                        'Mức cần đạt',
+                        _fmt(c.setpoint, '°C'),
+                        Icons.flag_rounded,
+                        const Color(0xFFF4A261),
+                      ),
+                      right: _Metric(
+                        'Làm lạnh',
+                        _fmt(c.tecPercent, '%', d: 0),
+                        Icons.bolt_rounded,
+                        NgungTuTheme.ice,
+                      ),
                     ),
                     const SizedBox(height: 12),
                     _MetricRow(
-                      left: _Metric('Quạt', _fmt(c.fanPercent, '%', d: 0), Icons.air_rounded, const Color(0xFF7BDFF2)),
+                      left: _Metric(
+                        'Quạt',
+                        _fmt(c.fanPercent, '%', d: 0),
+                        Icons.air_rounded,
+                        const Color(0xFF7BDFF2),
+                      ),
                       right: _Metric(
                         'Trạng thái máy',
                         _shortMachineStatus(c),
@@ -179,7 +264,7 @@ class HomePage extends StatelessWidget {
                       ),
                     ),
                     const SizedBox(height: 22),
-                    _LearnCard(),
+                    const _LearnCard(),
                     const SizedBox(height: 26),
                     TelemetryCharts(c: c),
                   ],
@@ -204,6 +289,44 @@ class HomePage extends StatelessWidget {
       decoration: BoxDecoration(
         shape: BoxShape.circle,
         gradient: RadialGradient(colors: [color, color.withValues(alpha: 0)]),
+      ),
+    );
+  }
+}
+
+class _ChipBadge extends StatelessWidget {
+  const _ChipBadge({required this.chipId, required this.live});
+  final String chipId;
+  final bool live;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(16),
+        color: Colors.white.withValues(alpha: 0.04),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+      ),
+      child: Row(
+        children: [
+          Icon(Icons.memory_rounded, color: live ? NgungTuTheme.aqua : NgungTuTheme.copper, size: 20),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              'Chip ID · $chipId',
+              style: Theme.of(context).textTheme.titleLarge?.copyWith(fontSize: 15),
+            ),
+          ),
+          Text(
+            live ? 'Live' : 'Chờ',
+            style: TextStyle(
+              color: live ? NgungTuTheme.aqua : NgungTuTheme.copper,
+              fontWeight: FontWeight.w800,
+              fontSize: 12,
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -273,6 +396,8 @@ class _HeroInsight extends StatelessWidget {
 }
 
 class _LearnCard extends StatelessWidget {
+  const _LearnCard();
+
   @override
   Widget build(BuildContext context) {
     return Material(
@@ -299,8 +424,10 @@ class _LearnCard extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text('Vì sao tạo ra được nước?',
-                        style: Theme.of(context).textTheme.titleLarge?.copyWith(fontSize: 16)),
+                    Text(
+                      'Vì sao tạo ra được nước?',
+                      style: Theme.of(context).textTheme.titleLarge?.copyWith(fontSize: 16),
+                    ),
                     const SizedBox(height: 3),
                     Text(
                       'Xem nguyên lý làm lạnh và điểm sương — giải thích dễ hiểu.',

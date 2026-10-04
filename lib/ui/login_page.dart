@@ -3,8 +3,10 @@ import 'package:flutter_animate/flutter_animate.dart';
 import 'package:provider/provider.dart';
 
 import '../core/auth_provider.dart';
+import 'forgot_password_page.dart';
 import 'register_page.dart';
 import 'theme.dart';
+import 'widgets/feedback.dart';
 
 class LoginPage extends StatefulWidget {
   const LoginPage({super.key});
@@ -26,17 +28,20 @@ class _LoginPageState extends State<LoginPage> {
   }
 
   Future<void> _submit() async {
-    final auth = context.read<AuthProvider>();
-    final ok = await auth.login(_email.text, _pass.text);
-    if (!ok && mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(auth.error ?? 'Đăng nhập chưa thành công'),
-          behavior: SnackBarBehavior.floating,
-          backgroundColor: NgungTuTheme.panel,
-        ),
-      );
+    final email = _email.text.trim();
+    final pass = _pass.text;
+    if (email.isEmpty || pass.isEmpty) {
+      showAppSnack(context, message: 'Vui lòng nhập email và mật khẩu');
+      return;
     }
+
+    final auth = context.read<AuthProvider>();
+    final ok = await auth.login(email, pass);
+    if (!mounted) return;
+    if (!ok) {
+      showAppSnack(context, message: auth.error ?? 'Đăng nhập chưa thành công');
+    }
+    // Thành công: AuthGate → ConnectPage hiện banner "Đăng nhập thành công".
   }
 
   @override
@@ -62,7 +67,11 @@ class _LoginPageState extends State<LoginPage> {
               right: -60,
               child: _blob(220, NgungTuTheme.aqua.withValues(alpha: 0.12))
                   .animate(onPlay: (c) => c.repeat(reverse: true))
-                  .scale(begin: const Offset(0.95, 0.95), end: const Offset(1.08, 1.08), duration: 5.seconds),
+                  .scale(
+                    begin: const Offset(0.95, 0.95),
+                    end: const Offset(1.08, 1.08),
+                    duration: 5.seconds,
+                  ),
             ),
             Positioned(
               bottom: 80,
@@ -71,7 +80,7 @@ class _LoginPageState extends State<LoginPage> {
             ),
             SafeArea(
               child: ListView(
-                padding: EdgeInsets.fromLTRB(28, h * 0.08, 28, 28),
+                padding: EdgeInsets.fromLTRB(28, h * 0.07, 28, 28),
                 children: [
                   Text(
                     'NGƯNG TỤ',
@@ -90,7 +99,7 @@ class _LoginPageState extends State<LoginPage> {
                           fontSize: 17,
                         ),
                   ).animate().fadeIn(delay: 100.ms),
-                  SizedBox(height: h * 0.07),
+                  SizedBox(height: h * 0.055),
                   _field(
                     controller: _email,
                     label: 'Email',
@@ -111,7 +120,34 @@ class _LoginPageState extends State<LoginPage> {
                       ),
                     ),
                   ),
-                  const SizedBox(height: 28),
+                  Align(
+                    alignment: Alignment.centerRight,
+                    child: TextButton(
+                      onPressed: () async {
+                        final nav = Navigator.of(context);
+                        final changed = await nav.push<bool>(
+                          MaterialPageRoute(builder: (_) => const ForgotPasswordPage()),
+                        );
+                        if (!mounted) return;
+                        if (changed == true) {
+                          showAppSnack(
+                            context,
+                            message: 'Đặt lại mật khẩu thành công — hãy đăng nhập',
+                            success: true,
+                          );
+                        }
+                      },
+                      child: Text(
+                        'Quên mật khẩu?',
+                        style: TextStyle(
+                          color: NgungTuTheme.ice.withValues(alpha: 0.9),
+                          fontWeight: FontWeight.w700,
+                          fontSize: 13,
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
                   SizedBox(
                     height: 56,
                     child: FilledButton(
@@ -125,9 +161,15 @@ class _LoginPageState extends State<LoginPage> {
                           ? const SizedBox(
                               width: 22,
                               height: 22,
-                              child: CircularProgressIndicator(strokeWidth: 2.2, color: NgungTuTheme.deep),
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2.2,
+                                color: NgungTuTheme.deep,
+                              ),
                             )
-                          : const Text('Vào ứng dụng', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 16)),
+                          : const Text(
+                              'Đăng nhập',
+                              style: TextStyle(fontWeight: FontWeight.w800, fontSize: 16),
+                            ),
                     ),
                   ),
                   const SizedBox(height: 18),
@@ -140,12 +182,18 @@ class _LoginPageState extends State<LoginPage> {
                       },
                       child: Text.rich(
                         TextSpan(
-                          style: TextStyle(color: NgungTuTheme.soft.withValues(alpha: 0.75), fontSize: 14),
+                          style: TextStyle(
+                            color: NgungTuTheme.soft.withValues(alpha: 0.75),
+                            fontSize: 14,
+                          ),
                           children: const [
                             TextSpan(text: 'Chưa có tài khoản? '),
                             TextSpan(
-                              text: 'Tạo mới',
-                              style: TextStyle(color: NgungTuTheme.ice, fontWeight: FontWeight.w700),
+                              text: 'Đăng ký',
+                              style: TextStyle(
+                                color: NgungTuTheme.ice,
+                                fontWeight: FontWeight.w700,
+                              ),
                             ),
                           ],
                         ),
