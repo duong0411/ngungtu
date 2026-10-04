@@ -82,8 +82,6 @@ class HomePage extends StatelessWidget {
                     _MetricGrid(c: c),
                     const SizedBox(height: 24),
                     TelemetryCharts(c: c),
-                    const SizedBox(height: 24),
-                    _CompactControls(c: c),
                   ],
                 ),
               ),
@@ -272,52 +270,6 @@ class _M {
   final String value;
   final IconData icon;
   final Color color;
-}
-
-/// Nút tạm dừng — hữu ích khi demo/an toàn, không phải điều khiển chính (PI tự chạy trên ESP)
-class _CompactControls extends StatelessWidget {
-  const _CompactControls({required this.c});
-  final CondenserProvider c;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: NgungTuTheme.panel.withValues(alpha: 0.65),
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
-      ),
-      child: Row(
-        children: [
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text('Vận hành tự động', style: Theme.of(context).textTheme.titleLarge?.copyWith(fontSize: 16)),
-                const SizedBox(height: 4),
-                Text(
-                  c.powerOn
-                      ? 'ESP đang tự chỉnh theo điểm sương · Quạt: ${c.fanOn ? "bật" : "tắt"}'
-                      : 'Máy đang tạm dừng thủ công',
-                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                        color: NgungTuTheme.soft.withValues(alpha: 0.65),
-                        fontSize: 12,
-                      ),
-                ),
-              ],
-            ),
-          ),
-          Switch(
-            value: c.powerOn,
-            activeThumbColor: NgungTuTheme.deep,
-            activeTrackColor: NgungTuTheme.aqua,
-            onChanged: (_) => c.togglePower(),
-          ),
-        ],
-      ),
-    );
-  }
 }
 
 class _MistOrb extends StatelessWidget {
