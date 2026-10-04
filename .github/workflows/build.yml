@@ -7,6 +7,9 @@ on:
     branches: [main]
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   android-apk:
     name: Android APK
@@ -36,11 +39,16 @@ jobs:
       - name: Build APK (release)
         run: flutter build apk --release
 
-      - name: Upload APK
+      - name: Rename APK
+        run: |
+          mkdir -p dist
+          cp build/app/outputs/flutter-apk/app-release.apk dist/ngungtu-stem.apk
+
+      - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
           name: ngungtu-apk
-          path: build/app/outputs/flutter-apk/app-release.apk
+          path: dist/ngungtu-stem.apk
 
   ios-no-codesign:
     name: iOS (no codesign)
@@ -63,14 +71,52 @@ jobs:
 
       - name: Pack Runner.app
         run: |
-          mkdir -p payload
+          mkdir -p dist payload
           cp -r build/ios/iphoneos/Runner.app payload/
           cd payload
-          zip -r ../ngungtu-ios-unsigned.zip Runner.app
-          cd ..
+          zip -r ../dist/ngungtu-ios-unsigned.zip Runner.app
 
       - name: Upload iOS artifact
         uses: actions/upload-artifact@v4
         with:
           name: ngungtu-ios-unsigned
-          path: ngungtu-ios-unsigned.zip
+          path: dist/ngungtu-ios-unsigned.zip
+
+  release:
+    name: GitHub Release
+    needs: [android-apk, ios-no-codesign]
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download APK
+        uses: actions/download-artifact@v4
+        with:
+          name: ngungtu-apk
+          path: dist
+
+      - name: Download iOS
+        uses: actions/download-artifact@v4
+        with:
+          name: ngungtu-ios-unsigned
+          path: dist
+
+      - name: Create / update Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v1.0.${{ github.run_number }}
+          name: Ngưng Tụ STEM v1.0.${{ github.run_number }}
+          draft: false
+          prerelease: false
+          generate_release_notes: true
+          files: |
+            dist/ngungtu-stem.apk
+            dist/ngungtu-ios-unsigned.zip
+          body: |
+            ## Tải app
+            - **Android:** `ngungtu-stem.apk` — cài trực tiếp trên điện thoại
+            - **iOS:** `ngungtu-ios-unsigned.zip` — bản chưa ký certificate (chỉ dùng kiểm thử CI)
+
+            ## STEM ESP32
+            App kết nối MQTT chipId `789` — máy ngưng tụ hơi nước.
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
