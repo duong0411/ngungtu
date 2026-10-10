@@ -33,30 +33,41 @@ class _HomePageState extends State<HomePage> {
     });
   }
 
+  /// Map status ASCII từ ESP/OLED → chữ hiển thị app (cùng nghĩa với OLED).
+  String _mapOledStatus(String raw) {
+    final s = raw.trim().toLowerCase();
+    if (s.isEmpty) return '--';
+    if (s.contains('ngung tu') || s.contains('đang ngưng')) return 'Đang ngưng tụ';
+    if (s.contains('chuan bi quat') || s.contains('chuẩn bị quạt')) return 'Chuẩn bị quạt';
+    if (s.contains('khong khi qua kho') || (s.contains('kho') && !s.contains('khoi'))) {
+      return 'Không khí quá khô';
+    }
+    if (s.contains('dong bang') || s.contains('đóng băng')) return 'Chống đóng băng';
+    if (s.contains('qua nhiet') || s.contains('quá nhiệt')) return 'Quá nhiệt — kiểm tra quạt';
+    if (s.contains('so khong lanh') || s.contains('không lạnh')) return 'Sò không lạnh';
+    if (s.contains('loi ds18') || s.contains('lỗi ds18')) return 'Lỗi DS18B20';
+    if (s.contains('loi dht') || s.contains('lỗi dht')) return 'Lỗi DHT11';
+    if (s.contains('tat tu app') || s.contains('tắt từ app')) return 'Tắt từ App';
+    if (s.contains('bat tu app') || s.contains('bật từ app')) return 'Bật từ App';
+    if (s.contains('cau hinh') || s.contains('cấu hình')) return 'Cấu hình mạng';
+    if (s.contains('san sang') || s.contains('sẵn sàng')) return 'Sẵn sàng';
+    if (s.contains('khoi dong') || s.contains('khởi động')) return 'Khởi động';
+    if (s.contains('offline')) return 'Chip offline';
+    if (s.contains('online') && s.contains('chip')) return raw.trim();
+    if (raw.trim().length <= 22) return raw.trim();
+    return '${raw.trim().substring(0, 21)}…';
+  }
+
   String _friendlyStatus(CondenserProvider c) {
     if (!c.mqttConnected) return 'Đang kết nối máy thu nước...';
-    if (!c.hasTelemetry) return 'Đã sẵn sàng — chờ dữ liệu cảm biến';
-    final s = c.status.toLowerCase();
-    if (s.contains('ngung tu') || s.contains('đang ngưng')) return 'Đang thu nước từ không khí';
-    if (s.contains('kho') || s.contains('khô')) return 'Không khí đang khô — tạm nghỉ để tiết kiệm điện';
-    if (s.contains('dong bang') || s.contains('đóng băng')) return 'Đang bảo vệ bề mặt lạnh';
-    if (s.contains('loi') || s.contains('lỗi') || s.contains('khoa')) return 'Cần kiểm tra thiết bị';
-    if (c.powerOn) return 'Máy đang vận hành ổn định';
-    return 'Máy đang tạm nghỉ';
+    if (!c.hasTelemetry && !c.online) return 'Đã sẵn sàng — chờ dữ liệu cảm biến';
+    // Ưu tiên đúng status ESP gửi (đồng bộ OLED), không fallback "vận hành ổn định"
+    return _mapOledStatus(c.status);
   }
 
   String _shortMachineStatus(CondenserProvider c) {
     if (!c.mqttConnected) return 'Chờ máy';
-    final s = c.status.trim();
-    if (s.isEmpty) return '--';
-    final lower = s.toLowerCase();
-    if (lower.contains('ngung tu') || lower.contains('đang ngưng')) return 'Đang thu nước';
-    if (lower.contains('kho') || lower.contains('khô')) return 'Không khí khô';
-    if (lower.contains('dong bang') || lower.contains('đóng băng')) return 'Bảo vệ lạnh';
-    if (lower.contains('san sang') || lower.contains('sẵn sàng')) return 'Sẵn sàng';
-    if (lower.contains('bat tu') || lower.contains('bật')) return 'Đang chạy';
-    if (s.length <= 16) return s;
-    return '${s.substring(0, 15)}…';
+    return _mapOledStatus(c.status);
   }
 
   Future<void> _changeDevice() async {

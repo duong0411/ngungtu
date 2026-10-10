@@ -176,10 +176,17 @@ class CondenserProvider extends ChangeNotifier {
     var changedSensors = false;
 
     if (_is(topic, AppConfig.topicOnline)) {
+      // Chỉ cập nhật online/offline — KHÔNG ghi đè statusMsg từ ESP (789_status)
       online = value.toString().toLowerCase() == 'online';
       if (online) {
         _markChipVerified();
-        status = hasTelemetry ? 'Máy đang vận hành ổn định' : 'Chip ${AppConfig.chipId} online';
+        if (!hasTelemetry &&
+            (status.startsWith('Đang kết nối') ||
+                status.startsWith('MQTT OK') ||
+                status.startsWith('Đã sẵn sàng') ||
+                status.startsWith('Chưa kết nối'))) {
+          status = 'Chip ${AppConfig.chipId} online';
+        }
       } else if (isLwtOffline) {
         online = false;
         status = 'Chip ${AppConfig.chipId} offline — chờ kết nối lại';
@@ -291,7 +298,8 @@ class CondenserProvider extends ChangeNotifier {
     }
     final next = !powerOn;
     powerOn = next;
-    status = next ? 'Đã bật hệ thống' : 'Đã tạm dừng hệ thống';
+    // Optimistic UI — ESP sẽ ghi đè bằng status thật qua tele/789_status
+    status = next ? 'Bat tu App' : 'Tat tu App';
     notifyListeners();
     _mqtt.setPower(next);
   }

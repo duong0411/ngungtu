@@ -33,6 +33,7 @@
 #include <DallasTemperature.h>
 #include <DHT.h>
 #include <esp_system.h>
+#include <string.h>
 #include "soc/soc.h"
 #include "soc/rtc_cntl_reg.h"
 
@@ -51,12 +52,17 @@
 // ─────────────────────────────────────────────────────────────
 #define PWM_FREQ      5000
 #define PWM_RES       8
-#define TEC_MAX_PWM   204   // 80%
+// Nguồn 12V-10A: trần ~75% (chừa quạt + ESP + biên sụt áp dây)
+// OLED hiển thị % theo /255 → 191 ≈ 75%; 178 ≈ 69%
+#define TEC_MAX_PWM   191
+// Soft-start: mỗi chu kỳ control (1s) tăng tối đa N bậc — tránh nhảy 0→max làm sụt nguồn
+#define TEC_RAMP_STEP 12    // ~5%/s → đầy trần ~16s
+#define FAN_LEAD_MS   2000UL // bật quạt trước TEC 2s (tản nhiệt sẵn)
 
 // ─────────────────────────────────────────────────────────────
 //  THÔNG SỐ ĐIỀU KHIỂN
 // ─────────────────────────────────────────────────────────────
-#define DEW_OFFSET        2.0f
+#define DEW_OFFSET        3.5f
 #define COLD_MIN_SET      2.0f
 #define COLD_HARD_LIMIT   0.5f
 #define MIN_RH_START      35.0f
@@ -64,6 +70,14 @@
 #define COLD_OVERHEAT     45.0f
 #define NO_COOL_TIME_MS   90000UL
 #define FAN_COOLDOWN_MS   60000UL
+
+// Lọc cảm biến toàn hệ thống: OFFSET → spike → median → EMA
+// Trade-off: DHT chậm/ổn định hơn; DS18B20 (PI) phản ứng nhanh hơn
+#define FILT_MAX_N        5
+#define DHT_TEMP_OFFSET   0.0f    // hiệu chỉnh so máy chuẩn
+#define DHT_RH_OFFSET     0.0f
+#define DS_TEMP_OFFSET    0.0f    // DS18B20 mặt lạnh
+#define DHT_DEW_UNCERT    1.5f    // dự phòng sai điểm sương
 
 float Kp = 25.0f;
 float Ki = 0.4f;
@@ -132,6 +146,7 @@ float integral = 0;
 int   tecPwm = 0, fanPwm = 0;
 unsigned long tDHT = 0, tDS = 0, tCtl = 0, tOff = 0, tOn = 0;
 const char* statusMsg = "Khoi dong";
+bool statusDirty = true;  // true → pub ngay tele/789_status (đồng bộ OLED ↔ app)
 
 // ─────────────────────────────────────────────────────────────
 //  BIẾN WIFI / MQTT
@@ -176,7 +191,15 @@ void pwmWrite(int pin, int ch, int duty) {
 }
 
 void setTEC(int d) {
-  tecPwm = constrain(d, 0, TEC_MAX_PWM);
+  int target = constrain(d, 0, TEC_MAX_PWM);
+  // Chỉ soft-ramp khi tăng công suất; giảm / tắt vẫn cắt nhanh (an toàn)
+  if (target > tecPwm) {
+    int next = tecPwm + TEC_RAMP_STEP;
+    if (next > target) next = target;
+    tecPwm = next;
+  } else {
+    tecPwm = target;
+  }
   pwmWrite(PIN_TEC, 0, tecPwm);
 }
 
@@ -185,32 +208,139 @@ void setFAN(int d) {
   pwmWrite(PIN_FAN, 1, fanPwm);
 }
 
+// Ép TEC = 0 ngay (fault / portal / tắt app) — bỏ qua soft-ramp
+void cutTEC() {
+  tecPwm = 0;
+  pwmWrite(PIN_TEC, 0, 0);
+}
+
+// Cập nhật status OLED + đánh dấu gửi MQTT ngay (không chờ TELEMETRY_MS)
+void setStatus(const char* msg) {
+  if (msg == nullptr) return;
+  if (statusMsg != nullptr && strcmp(statusMsg, msg) == 0) return;
+  statusMsg = msg;
+  statusDirty = true;
+}
+
 // ─────────────────────────────────────────────────────────────
-//  ĐIỂM SƯƠNG (Magnus)
+//  LỌC CẢM BIẾN (trade-off nhanh / chính xác tương đối)
 // ─────────────────────────────────────────────────────────────
+struct SensorFilter {
+  float buf[FILT_MAX_N];
+  uint8_t win;
+  uint8_t count;
+  uint8_t idx;
+  float alpha;
+  float maxJump;
+  float offset;
+  float value;
+  bool ready;
+
+  void begin(uint8_t window, float emaAlpha, float jump, float off) {
+    win = window;
+    if (win < 1) win = 1;
+    if (win > FILT_MAX_N) win = FILT_MAX_N;
+    count = 0;
+    idx = 0;
+    alpha = emaAlpha;
+    maxJump = jump;
+    offset = off;
+    value = NAN;
+    ready = false;
+  }
+
+  float median() const {
+    float tmp[FILT_MAX_N];
+    for (uint8_t i = 0; i < count; i++) tmp[i] = buf[i];
+    for (uint8_t i = 1; i < count; i++) {
+      float key = tmp[i];
+      int j = (int)i - 1;
+      while (j >= 0 && tmp[j] > key) {
+        tmp[j + 1] = tmp[j];
+        j--;
+      }
+      tmp[j + 1] = key;
+    }
+    return tmp[count / 2];
+  }
+
+  bool push(float raw) {
+    if (isnan(raw)) return false;
+    float x = raw + offset;
+    if (ready && fabsf(x - value) > maxJump) return false;
+
+    buf[idx] = x;
+    idx = (idx + 1) % win;
+    if (count < win) count++;
+
+    float med = median();
+    if (!ready) {
+      value = med;
+      ready = true;
+    } else {
+      value = alpha * med + (1.0f - alpha) * value;
+    }
+    return true;
+  }
+};
+
+SensorFilter filtAirT;
+SensorFilter filtAirRH;
+SensorFilter filtCold;
+
+void initSensorFilters() {
+  // DHT11: nhiễu lớn, chậm — median 5, EMA nhẹ (ổn định)
+  filtAirT.begin(5, 0.30f, 3.0f, DHT_TEMP_OFFSET);
+  filtAirRH.begin(5, 0.30f, 12.0f, DHT_RH_OFFSET);
+  // DS18B20: vòng PI — median 3, EMA mạnh hơn (nhanh hơn)
+  filtCold.begin(3, 0.50f, 2.5f, DS_TEMP_OFFSET);
+}
+
 float calcDewPoint(float T, float RH) {
+  RH = constrain(RH, 5.0f, 99.0f);
   const float a = 17.62f, b = 243.12f;
   float g = log(RH / 100.0f) + (a * T) / (b + T);
   return (b * g) / (a - g);
 }
 
+void applyDhtReading(float tRaw, float hRaw) {
+  if (tRaw < -5.0f || tRaw > 60.0f || hRaw < 5.0f || hRaw > 100.0f) return;
+  hRaw = constrain(hRaw, 5.0f, 99.0f);
+  bool okT = filtAirT.push(tRaw);
+  bool okH = filtAirRH.push(hRaw);
+  if (okT) airT = filtAirT.value;
+  if (okH) airRH = filtAirRH.value;
+  if (!isnan(airT) && !isnan(airRH)) {
+    dewP = calcDewPoint(airT, airRH);
+  }
+}
+
+void applyColdReading(float cRaw) {
+  if (cRaw == DEVICE_DISCONNECTED_C || cRaw < -55.0f || cRaw > 125.0f) {
+    return;
+  }
+  if (filtCold.push(cRaw)) {
+    coldT = filtCold.value;
+  }
+}
+
 void shutdownAll(const char* msg) {
-  setTEC(0);
+  cutTEC();
   integral = 0;
   if (running) {
     running = false;
     tOff = millis();
   }
-  statusMsg = msg;
+  setStatus(msg);
 }
 
 void latchFault(const char* msg) {
-  setTEC(0);
+  cutTEC();
   integral = 0;
   fault = true;
   running = false;
   tOff = millis();
-  statusMsg = msg;
+  setStatus(msg);
   Serial.printf("!!! KHOA SO: %s\n", msg);
 }
 
@@ -223,15 +353,17 @@ void readSensors() {
     float h = dht.readHumidity();
     float t = dht.readTemperature();
     if (!isnan(h) && !isnan(t) && h > 0) {
-      airRH = h;
-      airT = t;
-      dewP = calcDewPoint(airT, airRH);
+      applyDhtReading(t, h);
     }
   }
 
   if (millis() - tDS >= 800) {
     float c = ds.getTempCByIndex(0);
-    coldT = (c == DEVICE_DISCONNECTED_C) ? NAN : c;
+    if (c == DEVICE_DISCONNECTED_C) {
+      if (!filtCold.ready) coldT = NAN;
+    } else {
+      applyColdReading(c);
+    }
     ds.requestTemperatures();
     tDS = millis();
   }
@@ -242,7 +374,7 @@ void control() {
   tCtl = millis();
 
   if (fault) {
-    setTEC(0);
+    cutTEC();
     return;
   }
 
@@ -281,19 +413,37 @@ void control() {
     running = true;
     integral = 0;
     tOn = millis();
+    // Quạt lên trước — updateFan() sẽ bật 100% vì running=true
+    setFAN(255);
+    setStatus("Chuan bi quat");
+    return;  // chu kỳ này chưa cấp TEC
   }
-  statusMsg = "Dang ngung tu";
+
+  // Đợi quạt chạy ổn rồi mới ramp TEC
+  if (millis() - tOn < FAN_LEAD_MS) {
+    setStatus("Chuan bi quat");
+    cutTEC();
+    return;
+  }
+
+  setStatus("Dang ngung tu");
 
   if (tecPwm > 60 && millis() - tOn > NO_COOL_TIME_MS && coldT > airT + 1.0f) {
     latchFault("SO KHONG LANH");
     return;
   }
 
-  setpoint = max(dewP - DEW_OFFSET, COLD_MIN_SET);
+  // DEW_OFFSET + DHT_DEW_UNCERT: bù sai số DHT11, vẫn đảm bảo ngưng tụ
+  setpoint = max(dewP - DEW_OFFSET - DHT_DEW_UNCERT, COLD_MIN_SET);
   float err = coldT - setpoint;
-  integral += err;
-  integral = constrain(integral, 0, (float)TEC_MAX_PWM / Ki);
-  setTEC((int)(Kp * err + Ki * integral));
+  // Anti-windup: chỉ tích phân khi TEC chưa bão hòa (tránh tích quá lúc soft-ramp)
+  int piOut = (int)(Kp * err + Ki * integral);
+  if (piOut < TEC_MAX_PWM || err < 0) {
+    integral += err;
+    integral = constrain(integral, 0, (float)TEC_MAX_PWM / Ki);
+    piOut = (int)(Kp * err + Ki * integral);
+  }
+  setTEC(piOut);  // setTEC tự soft-ramp khi tăng
 }
 
 void updateFan() {
@@ -471,10 +621,11 @@ void pubFan() {
 }
 
 void pubStatus() {
-  // JSON string value — app parse được
+  // JSON string value — app parse được (cùng chữ OLED đang hiện)
   String safe = String(statusMsg);
   safe.replace("\"", "'");
   mqttPub(DEV_STATUS, "{\"value\":\"" + safe + "\"}", true);
+  statusDirty = false;
 }
 
 void pubPower() {
@@ -515,7 +666,7 @@ void mqttCallback(const String& topicStr, const String& payload, const size_t si
     // POWER: bật/tắt toàn bộ; FAN topic dùng như công tắc hệ thống cho dễ gắn app sẵn
     if (cmd == "ON" || cmd == "1") {
       systemEnabled = true;
-      if (topic.indexOf(DEV_POWER) >= 0) statusMsg = "Bat tu App";
+      if (topic.indexOf(DEV_POWER) >= 0) setStatus("Bat tu App");
     } else if (cmd == "OFF" || cmd == "0") {
       systemEnabled = false;
       shutdownAll("Tat tu App");
@@ -670,7 +821,7 @@ void handleConnect() {
 
 void startPortal() {
   portalActive = true;
-  setTEC(0);
+  cutTEC();
   setFAN(0);
   Serial.println("\nKhoi tao AP Portal...");
   WiFi.mode(WIFI_AP_STA);
@@ -683,7 +834,7 @@ void startPortal() {
   webServer.onNotFound(handleNotFound);
   webServer.begin();
   Serial.println("Portal OK — ket noi WiFi: NgungTu → http://192.168.4.1");
-  statusMsg = "Cau hinh mang";
+  setStatus("Cau hinh mang");
 }
 
 void checkBootButtonForPortal() {
@@ -736,8 +887,9 @@ void setup() {
 
   pwmInit(PIN_TEC, 0);
   pwmInit(PIN_FAN, 1);
-  setTEC(0);
+  cutTEC();
   setFAN(0);
+  initSensorFilters();
 
   Wire.begin(21, 22);
   if (!oled.begin(SSD1306_SWITCHCAPVCC, 0x3C)) {
@@ -747,13 +899,9 @@ void setup() {
   oled.clearDisplay();
   oled.setTextSize(1);
   oled.setTextColor(SSD1306_WHITE);
-  oled.setCursor(0, 20);
-  oled.println("TEST QUAT 3 giay...");
-  oled.println("Quat phai quay!");
+  oled.setCursor(0, 24);
+  oled.println("Khoi dong...");
   oled.display();
-  setFAN(255);
-  delay(3000);
-  setFAN(0);
 
   dht.begin();
   ds.begin();
@@ -799,9 +947,9 @@ void setup() {
     startPortal();
   } else if (!(wifiCount > 0 && connectBestWifi())) {
     startPortal();
+  } else {
+    setStatus("San sang");
   }
-
-  statusMsg = "San sang";
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -851,6 +999,12 @@ void loop() {
 
   wsClient.loop();
   mqttClient.update();
+
+  // Đổi status trên OLED → đẩy MQTT ngay (app khớp OLED, không chờ 2s telemetry)
+  if (statusDirty && mqttClient.isConnected()) {
+    pubStatus();
+    wsClient.loop();
+  }
 
   if (!mqttClient.isConnected()) {
     if (now - lastMqttRetry >= 5000) {
