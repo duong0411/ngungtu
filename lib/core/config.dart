@@ -23,8 +23,11 @@ class AppConfig {
   static String get topicTec => 'tele/${chipId}_tec/status';
   static String get topicStatus => 'tele/${chipId}_status/status';
   static String get topicPower => 'tele/${chipId}_power/status';
+  /// Trạng thái công tắc MOSFET quạt (ON/OFF) — tách với % PWM trên topicFan
+  static String get topicFanEn => 'tele/${chipId}_fan_en/status';
 
   static String get cmndPower => 'cmnd/${chipId}_power/POWER';
+  static String get cmndTec => 'cmnd/${chipId}_tec/POWER';
   static String get cmndFan => 'cmnd/${chipId}_fan_livingroom/POWER';
 
   static List<String> get subscribeTopics => [
@@ -32,6 +35,7 @@ class AppConfig {
         topicTemp,
         topicHumi,
         topicFan,
+        topicFanEn,
         topicDew,
         topicCold,
         topicSetpoint,

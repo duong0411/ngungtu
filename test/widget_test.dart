@@ -10,6 +10,9 @@ void main() {
     expect(AppConfig.topicDew, 'tele/789_dew_point/status');
     expect(AppConfig.topicCold, 'tele/789_cold_plate/status');
     expect(AppConfig.cmndPower, 'cmnd/789_power/POWER');
+    expect(AppConfig.cmndTec, 'cmnd/789_tec/POWER');
+    expect(AppConfig.cmndFan, 'cmnd/789_fan_livingroom/POWER');
+    expect(AppConfig.topicFanEn, 'tele/789_fan_en/status');
   });
 
   test('AppConfig topics follow selected chipId', () {

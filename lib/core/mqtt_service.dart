@@ -171,10 +171,20 @@ class MqttService {
     _client!.publishMessage(topic, MqttQos.atLeastOnce, builder.payload!);
   }
 
+  /// Bật/tắt cả 2 MOSFET (sò + quạt).
   void setPower(bool on) {
     final cmd = on ? 'ON' : 'OFF';
     publish(AppConfig.cmndPower, cmd);
-    publish(AppConfig.cmndFan, cmd);
+  }
+
+  /// MOSFET sò nóng lạnh (TEC).
+  void setTec(bool on) {
+    publish(AppConfig.cmndTec, on ? 'ON' : 'OFF');
+  }
+
+  /// MOSFET quạt.
+  void setFan(bool on) {
+    publish(AppConfig.cmndFan, on ? 'ON' : 'OFF');
   }
 
   Future<void> _safeDisconnect() async {

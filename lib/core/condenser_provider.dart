@@ -37,7 +37,12 @@ class CondenserProvider extends ChangeNotifier {
 
   bool connecting = false;
   bool online = false;
-  bool powerOn = true;
+  /// MOSFET sò (TEC) — công tắc từ app.
+  bool tecOn = true;
+  /// MOSFET quạt — công tắc từ app (khác với fanPercent đang chạy).
+  bool fanEnabled = true;
+  /// Cả hệ thống (sò + quạt) đang bật.
+  bool get powerOn => tecOn && fanEnabled;
   DateTime? lastUpdate;
 
   /// Đã nhận tín hiệu đúng chipId người dùng nhập.
@@ -119,6 +124,8 @@ class CondenserProvider extends ChangeNotifier {
     tecPercent = null;
     fanPercent = null;
     fanOn = false;
+    tecOn = true;
+    fanEnabled = true;
     history.clear();
     lastUpdate = null;
     status = 'Đang kết nối chip ${AppConfig.chipId}...';
@@ -141,6 +148,8 @@ class CondenserProvider extends ChangeNotifier {
     tecPercent = null;
     fanPercent = null;
     fanOn = false;
+    tecOn = true;
+    fanEnabled = true;
     history.clear();
     lastUpdate = null;
     status = 'Đã ngắt thiết bị — nhập Chip ID để kết nối lại';
@@ -212,7 +221,13 @@ class CondenserProvider extends ChangeNotifier {
       changedSensors = true;
       _markChipVerified();
     } else if (_is(topic, AppConfig.topicTec)) {
-      tecPercent = _asDouble(value);
+      final pct = _asDouble(value);
+      if (pct != null) {
+        tecPercent = pct.clamp(0, 100);
+      } else {
+        // ESP có thể gửi ON/OFF trên topic TEC (công tắc MOSFET)
+        tecOn = _asOn(value);
+      }
       _markChipVerified();
     } else if (_is(topic, AppConfig.topicFan)) {
       final pct = _asDouble(value);
@@ -221,11 +236,16 @@ class CondenserProvider extends ChangeNotifier {
         fanOn = fanPercent! > 0;
       } else {
         fanOn = _asOn(value);
+        fanEnabled = fanOn;
         fanPercent = fanOn ? 100 : 0;
       }
       _markChipVerified();
+    } else if (_is(topic, AppConfig.topicFanEn)) {
+      fanEnabled = _asOn(value);
+      _markChipVerified();
     } else if (_is(topic, AppConfig.topicPower)) {
-      powerOn = _asOn(value);
+      // tele power = trạng thái MOSFET sò (TEC enable)
+      tecOn = _asOn(value);
       _markChipVerified();
     } else if (_is(topic, AppConfig.topicStatus)) {
       status = value?.toString() ?? status;
@@ -252,6 +272,8 @@ class CondenserProvider extends ChangeNotifier {
         'tecPercent': tecPercent,
         'fanPercent': fanPercent,
         'fan': fanOn,
+        'tecOn': tecOn,
+        'fanEnabled': fanEnabled,
         'power': powerOn,
         'status': status,
         'chipId': AppConfig.chipId,
@@ -290,19 +312,44 @@ class CondenserProvider extends ChangeNotifier {
 
   bool _is(String topic, String expected) => topic == expected;
 
+  bool _ensureMqtt() {
+    if (_mqtt.isConnected) return true;
+    status = 'Chưa kết nối — kéo xuống để thử lại';
+    notifyListeners();
+    return false;
+  }
+
+  /// Bật/tắt cả 2 MOSFET.
   void togglePower() {
-    if (!_mqtt.isConnected) {
-      status = 'Chưa kết nối — kéo xuống để thử lại';
-      notifyListeners();
-      return;
-    }
+    if (!_ensureMqtt()) return;
     final next = !powerOn;
-    powerOn = next;
-    // Optimistic UI — ESP sẽ ghi đè bằng status thật qua tele/789_status
+    tecOn = next;
+    fanEnabled = next;
     status = next ? 'Bat tu App' : 'Tat tu App';
     notifyListeners();
     _mqtt.setPower(next);
   }
+
+  /// MOSFET sò nóng lạnh.
+  void setTec(bool on) {
+    if (!_ensureMqtt()) return;
+    tecOn = on;
+    status = on ? 'Bat so tu App' : 'Tat so tu App';
+    notifyListeners();
+    _mqtt.setTec(on);
+  }
+
+  /// MOSFET quạt.
+  void setFan(bool on) {
+    if (!_ensureMqtt()) return;
+    fanEnabled = on;
+    status = on ? 'Bat quat tu App' : 'Tat quat tu App';
+    notifyListeners();
+    _mqtt.setFan(on);
+  }
+
+  void toggleTec() => setTec(!tecOn);
+  void toggleFan() => setFan(!fanEnabled);
 
   Future<void> reconnect() => start(force: true);
 

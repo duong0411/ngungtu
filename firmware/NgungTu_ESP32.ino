@@ -7,6 +7,7 @@
  * ║  ✅ WiFi Portal AP tĩnh 192.168.4.1 (lưu tối đa 5 mạng)    ║
  * ║  ✅ MQTT qua WebSockets SSL (WSS Port 443 Cloudflare)       ║
  * ║  ✅ Gửi nhiệt độ / độ ẩm / điểm sương / mặt lạnh lên App    ║
+ * ║  ✅ App bật/tắt riêng 2 MOSFET (sò TEC + quạt) qua MQTT     ║
  * ╚══════════════════════════════════════════════════════════════╝
  *
  * THƯ VIỆN CẦN CÓ:
@@ -52,12 +53,15 @@
 // ─────────────────────────────────────────────────────────────
 #define PWM_FREQ      5000
 #define PWM_RES       8
-// Nguồn 12V-10A: trần ~75% (chừa quạt + ESP + biên sụt áp dây)
-// OLED hiển thị % theo /255 → 191 ≈ 75%; 178 ≈ 69%
-#define TEC_MAX_PWM   191
-// Soft-start: mỗi chu kỳ control (1s) tăng tối đa N bậc — tránh nhảy 0→max làm sụt nguồn
-#define TEC_RAMP_STEP 12    // ~5%/s → đầy trần ~16s
-#define FAN_LEAD_MS   2000UL // bật quạt trước TEC 2s (tản nhiệt sẵn)
+// Nguồn 12V-10A: sau cold-start cho lên ~85%; lúc đầu giữ thấp tránh inrush
+// OLED % = duty*100/255 → 217≈85%; 115≈45%
+#define TEC_MAX_PWM       217   // ~85% vận hành sau khi sò đã ổn
+// Soft-start: TEC nguội lúc đầu R thấp → dòng inrush lớn nhất
+// (cắm USB laptop thì ESP lấy 5V USB nên "không sụt"; rút USB mới lộ)
+#define TEC_RAMP_STEP     8     // ~3%/s — chậm hơn để PSU kịp ổn
+#define FAN_LEAD_MS       3000UL
+#define TEC_COLD_START_MS 45000UL // 45s đầu chỉ cho tối đa ~45%
+#define TEC_COLD_MAX_PWM  115     // ~45% — qua giai inrush rồi mới lên 85%
 
 // ─────────────────────────────────────────────────────────────
 //  THÔNG SỐ ĐIỀU KHIỂN
@@ -108,7 +112,8 @@ const byte DNS_PORT = 53;
 #define DEV_SETPOINT  "789_setpoint"
 #define DEV_TEC       "789_tec"
 #define DEV_STATUS    "789_status"
-#define DEV_POWER     "789_power"   // ON/OFF bật tắt hệ thống từ app
+#define DEV_POWER     "789_power"   // ON/OFF MOSFET sò (TEC) từ app
+#define DEV_FAN_EN    "789_fan_en"  // ON/OFF MOSFET quạt (công tắc app)
 
 #define EEPROM_SIZE   512
 #define MAX_WIFI      5
@@ -141,7 +146,8 @@ MQTTPubSubClient mqttClient;
 float airT = NAN, airRH = NAN, dewP = NAN;
 float coldT = NAN, setpoint = 0;
 bool  running = false, fault = false;
-bool  systemEnabled = true;   // tắt bằng MQTT thì không chạy TEC
+bool  tecEnabled = true;   // MQTT: MOSFET sò (TEC)
+bool  fanEnabled = true;   // MQTT: MOSFET quạt
 float integral = 0;
 int   tecPwm = 0, fanPwm = 0;
 unsigned long tDHT = 0, tDS = 0, tCtl = 0, tOff = 0, tOn = 0;
@@ -190,8 +196,17 @@ void pwmWrite(int pin, int ch, int duty) {
 #endif
 }
 
+// Trần PWM theo giai: cold-start thấp → sau đó mới cho TEC_MAX_PWM
+int tecCeiling() {
+  if (running && (millis() - tOn) < (FAN_LEAD_MS + TEC_COLD_START_MS)) {
+    return TEC_COLD_MAX_PWM;
+  }
+  return TEC_MAX_PWM;
+}
+
 void setTEC(int d) {
-  int target = constrain(d, 0, TEC_MAX_PWM);
+  int ceil = tecCeiling();
+  int target = constrain(d, 0, ceil);
   // Chỉ soft-ramp khi tăng công suất; giảm / tắt vẫn cắt nhanh (an toàn)
   if (target > tecPwm) {
     int next = tecPwm + TEC_RAMP_STEP;
@@ -378,8 +393,8 @@ void control() {
     return;
   }
 
-  if (!systemEnabled) {
-    shutdownAll("Tat tu App");
+  if (!tecEnabled) {
+    shutdownAll("Tat so tu App");
     return;
   }
 
@@ -426,7 +441,12 @@ void control() {
     return;
   }
 
-  setStatus("Dang ngung tu");
+  // Trong cold-start: hiện rõ trên OLED/app để biết đang hạn chế công suất
+  if ((millis() - tOn) < (FAN_LEAD_MS + TEC_COLD_START_MS)) {
+    setStatus("Khoi dong so");
+  } else {
+    setStatus("Dang ngung tu");
+  }
 
   if (tecPwm > 60 && millis() - tOn > NO_COOL_TIME_MS && coldT > airT + 1.0f) {
     latchFault("SO KHONG LANH");
@@ -436,17 +456,23 @@ void control() {
   // DEW_OFFSET + DHT_DEW_UNCERT: bù sai số DHT11, vẫn đảm bảo ngưng tụ
   setpoint = max(dewP - DEW_OFFSET - DHT_DEW_UNCERT, COLD_MIN_SET);
   float err = coldT - setpoint;
-  // Anti-windup: chỉ tích phân khi TEC chưa bão hòa (tránh tích quá lúc soft-ramp)
+  int ceil = tecCeiling();
+  // Anti-windup theo trần hiện tại (cold-start / vận hành)
   int piOut = (int)(Kp * err + Ki * integral);
-  if (piOut < TEC_MAX_PWM || err < 0) {
+  if (piOut < ceil || err < 0) {
     integral += err;
-    integral = constrain(integral, 0, (float)TEC_MAX_PWM / Ki);
+    integral = constrain(integral, 0, (float)ceil / max(Ki, 0.01f));
     piOut = (int)(Kp * err + Ki * integral);
   }
-  setTEC(piOut);  // setTEC tự soft-ramp khi tăng
+  setTEC(piOut);  // setTEC tự soft-ramp + trần cold-start
 }
 
 void updateFan() {
+  // Công tắc MOSFET quạt từ app: OFF → cắt hẳn; ON → theo logic tự động
+  if (!fanEnabled) {
+    setFAN(0);
+    return;
+  }
   bool cooldown = (tOff != 0 && millis() - tOff < FAN_COOLDOWN_MS);
   if (fault || running || cooldown) setFAN(255);
   else setFAN(0);
@@ -629,7 +655,12 @@ void pubStatus() {
 }
 
 void pubPower() {
-  mqttPub(DEV_POWER, systemEnabled ? "{\"value\":\"ON\"}" : "{\"value\":\"OFF\"}", true);
+  // tele power = trạng thái công tắc MOSFET sò
+  mqttPub(DEV_POWER, tecEnabled ? "{\"value\":\"ON\"}" : "{\"value\":\"OFF\"}", true);
+}
+
+void pubFanEn() {
+  mqttPub(DEV_FAN_EN, fanEnabled ? "{\"value\":\"ON\"}" : "{\"value\":\"OFF\"}", true);
 }
 
 void publishTelemetry() {
@@ -647,9 +678,37 @@ void publishTelemetry() {
   wsClient.loop();
   pubFan();
   wsClient.loop();
+  pubFanEn();
+  wsClient.loop();
   pubStatus();
   wsClient.loop();
   pubPower();
+}
+
+void applyTecCommand(bool on) {
+  tecEnabled = on;
+  if (on) {
+    setStatus("Bat so tu App");
+  } else {
+    shutdownAll("Tat so tu App");
+  }
+  pubPower();
+  pubTec();
+  pubStatus();
+}
+
+void applyFanCommand(bool on) {
+  fanEnabled = on;
+  if (on) {
+    setStatus("Bat quat tu App");
+    updateFan();
+  } else {
+    setFAN(0);
+    setStatus("Tat quat tu App");
+  }
+  pubFanEn();
+  pubFan();
+  pubStatus();
 }
 
 void mqttCallback(const String& topicStr, const String& payload, const size_t size) {
@@ -661,19 +720,38 @@ void mqttCallback(const String& topicStr, const String& payload, const size_t si
 
   Serial.printf("Nhan lenh [%s]: %s\n", topic.c_str(), cmd.c_str());
 
-  // Bật / tắt hệ thống ngưng tụ từ app
-  if (topic.indexOf(DEV_POWER) >= 0 || topic.indexOf(DEV_FAN) >= 0) {
-    // POWER: bật/tắt toàn bộ; FAN topic dùng như công tắc hệ thống cho dễ gắn app sẵn
-    if (cmd == "ON" || cmd == "1") {
-      systemEnabled = true;
-      if (topic.indexOf(DEV_POWER) >= 0) setStatus("Bat tu App");
-    } else if (cmd == "OFF" || cmd == "0") {
-      systemEnabled = false;
+  const bool isOn = (cmd == "ON" || cmd == "1");
+  const bool isOff = (cmd == "OFF" || cmd == "0");
+  if (!isOn && !isOff) return;
+
+  // POWER: bật/tắt cả 2 MOSFET
+  if (topic.indexOf(DEV_POWER) >= 0) {
+    tecEnabled = isOn;
+    fanEnabled = isOn;
+    if (isOn) {
+      setStatus("Bat tu App");
+      updateFan();
+    } else {
       shutdownAll("Tat tu App");
+      setFAN(0);
     }
     pubPower();
+    pubFanEn();
     pubFan();
+    pubTec();
     pubStatus();
+    return;
+  }
+
+  // TEC: chỉ MOSFET sò
+  if (topic.indexOf(DEV_TEC) >= 0) {
+    applyTecCommand(isOn);
+    return;
+  }
+
+  // FAN: chỉ MOSFET quạt
+  if (topic.indexOf(DEV_FAN) >= 0) {
+    applyFanCommand(isOn);
   }
 }
 
@@ -708,7 +786,16 @@ void reconnectMQTT() {
     wsClient.loop();
     delay(50);
 
-    // Dùng nút Quạt trên app living room để bật/tắt hệ thống
+    // MOSFET sò (TEC)
+    mqttClient.subscribe("cmnd/" + String(DEV_TEC) + "/POWER", [](const char* payload, unsigned int size) {
+      String cmd = "";
+      for (unsigned int i = 0; i < size; i++) cmd += payload[i];
+      mqttCallback("cmnd/" + String(DEV_TEC) + "/POWER", cmd, size);
+    });
+    wsClient.loop();
+    delay(50);
+
+    // MOSFET quạt
     mqttClient.subscribe("cmnd/" + String(DEV_FAN) + "/POWER", [](const char* payload, unsigned int size) {
       String cmd = "";
       for (unsigned int i = 0; i < size; i++) cmd += payload[i];

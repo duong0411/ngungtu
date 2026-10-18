@@ -38,6 +38,7 @@ class _HomePageState extends State<HomePage> {
     final s = raw.trim().toLowerCase();
     if (s.isEmpty) return '--';
     if (s.contains('ngung tu') || s.contains('đang ngưng')) return 'Đang ngưng tụ';
+    if (s.contains('khoi dong so') || s.contains('khởi động sò')) return 'Khởi động sò';
     if (s.contains('chuan bi quat') || s.contains('chuẩn bị quạt')) return 'Chuẩn bị quạt';
     if (s.contains('khong khi qua kho') || (s.contains('kho') && !s.contains('khoi'))) {
       return 'Không khí quá khô';
@@ -47,6 +48,10 @@ class _HomePageState extends State<HomePage> {
     if (s.contains('so khong lanh') || s.contains('không lạnh')) return 'Sò không lạnh';
     if (s.contains('loi ds18') || s.contains('lỗi ds18')) return 'Lỗi DS18B20';
     if (s.contains('loi dht') || s.contains('lỗi dht')) return 'Lỗi DHT11';
+    if (s.contains('tat so') || s.contains('tắt sò')) return 'Tắt sò từ App';
+    if (s.contains('bat so') || s.contains('bật sò')) return 'Bật sò từ App';
+    if (s.contains('tat quat') || s.contains('tắt quạt')) return 'Tắt quạt từ App';
+    if (s.contains('bat quat') || s.contains('bật quạt')) return 'Bật quạt từ App';
     if (s.contains('tat tu app') || s.contains('tắt từ app')) return 'Tắt từ App';
     if (s.contains('bat tu app') || s.contains('bật từ app')) return 'Bật từ App';
     if (s.contains('cau hinh') || s.contains('cấu hình')) return 'Cấu hình mạng';
@@ -275,6 +280,18 @@ class _HomePageState extends State<HomePage> {
                       ),
                     ),
                     const SizedBox(height: 22),
+                    Text('Điều khiển MOSFET', style: Theme.of(context).textTheme.titleLarge),
+                    const SizedBox(height: 6),
+                    Text(
+                      'Bật / tắt sò và quạt qua MQTT từ điện thoại',
+                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                            color: NgungTuTheme.soft.withValues(alpha: 0.65),
+                            fontSize: 12,
+                          ),
+                    ),
+                    const SizedBox(height: 12),
+                    _MosfetControls(c: c),
+                    const SizedBox(height: 22),
                     const _LearnCard(),
                     const SizedBox(height: 26),
                     TelemetryCharts(c: c),
@@ -403,6 +420,123 @@ class _HeroInsight extends StatelessWidget {
         ],
       ),
     ).animate().fadeIn(delay: 120.ms);
+  }
+}
+
+class _MosfetControls extends StatelessWidget {
+  const _MosfetControls({required this.c});
+  final CondenserProvider c;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.fromLTRB(14, 10, 10, 10),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(22),
+        color: NgungTuTheme.panel.withValues(alpha: 0.7),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.07)),
+      ),
+      child: Column(
+        children: [
+          _MosfetSwitch(
+            title: 'Sò nóng lạnh',
+            subtitle: c.tecOn
+                ? 'MOSFET TEC · đang cho phép chạy'
+                : 'MOSFET TEC · đã cắt',
+            icon: Icons.bolt_rounded,
+            color: NgungTuTheme.ice,
+            value: c.tecOn,
+            onChanged: c.mqttConnected ? c.setTec : null,
+          ),
+          Divider(height: 18, color: Colors.white.withValues(alpha: 0.08)),
+          _MosfetSwitch(
+            title: 'Quạt tản nhiệt',
+            subtitle: c.fanEnabled
+                ? 'MOSFET quạt · đang cho phép chạy'
+                : 'MOSFET quạt · đã cắt',
+            icon: Icons.air_rounded,
+            color: const Color(0xFF7BDFF2),
+            value: c.fanEnabled,
+            onChanged: c.mqttConnected ? c.setFan : null,
+          ),
+          const SizedBox(height: 8),
+          SizedBox(
+            width: double.infinity,
+            child: TextButton.icon(
+              onPressed: c.mqttConnected ? c.togglePower : null,
+              icon: Icon(
+                c.powerOn ? Icons.power_settings_new_rounded : Icons.power_off_rounded,
+                size: 18,
+              ),
+              label: Text(c.powerOn ? 'Tắt cả 2 MOSFET' : 'Bật cả 2 MOSFET'),
+              style: TextButton.styleFrom(
+                foregroundColor: c.powerOn ? NgungTuTheme.copper : NgungTuTheme.aqua,
+                padding: const EdgeInsets.symmetric(vertical: 12),
+              ),
+            ),
+          ),
+        ],
+      ),
+    ).animate().fadeIn(delay: 80.ms);
+  }
+}
+
+class _MosfetSwitch extends StatelessWidget {
+  const _MosfetSwitch({
+    required this.title,
+    required this.subtitle,
+    required this.icon,
+    required this.color,
+    required this.value,
+    required this.onChanged,
+  });
+
+  final String title;
+  final String subtitle;
+  final IconData icon;
+  final Color color;
+  final bool value;
+  final ValueChanged<bool>? onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        Container(
+          width: 42,
+          height: 42,
+          decoration: BoxDecoration(
+            color: color.withValues(alpha: value ? 0.22 : 0.08),
+            borderRadius: BorderRadius.circular(14),
+          ),
+          child: Icon(icon, color: color, size: 22),
+        ),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(title, style: Theme.of(context).textTheme.titleLarge?.copyWith(fontSize: 15)),
+              const SizedBox(height: 2),
+              Text(
+                subtitle,
+                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                      color: NgungTuTheme.soft.withValues(alpha: 0.62),
+                      fontSize: 12,
+                    ),
+              ),
+            ],
+          ),
+        ),
+        Switch.adaptive(
+          value: value,
+          onChanged: onChanged,
+          activeThumbColor: NgungTuTheme.deep,
+          activeTrackColor: NgungTuTheme.aqua,
+        ),
+      ],
+    );
   }
 }
 
